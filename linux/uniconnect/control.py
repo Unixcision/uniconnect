@@ -70,7 +70,7 @@ class ControlServer:
                 self.window.background(work, lambda result: self.respond(client, result))
                 self.clients[client][1] = None  # This read watch is removed on return.
                 return False
-            if request.get("command") == "accounts.list":
+            if request.get("command") in ("accounts.list", "accounts.codex_reset"):
                 # accounts.v1: el mismo JSON que el móvil; las sondas (≤ 12 s) fuera de GTK.
                 from .accounts import AccountsReader
                 workspace_id = request.get("params", {}).get("workspace_id")
@@ -79,8 +79,12 @@ class ControlServer:
                     self.clients[client][1] = None
                     return False
                 boxes = AccountsReader.snapshot(self.window)
+                params = request.get("params", {}) if isinstance(request.get("params"), dict) else {}
                 def accounts():
                     try:
+                        if request["command"] == "accounts.codex_reset":
+                            return {"ok": True, "result": self.window.accounts_reader.codex_reset(
+                                boxes, params.get("account_key"), params.get("host_key"), params.get("idempotency_key"))}
                         return {"ok": True, "result": AccountsReader.only(self.window.accounts_reader.read(boxes), workspace_id)}
                     except Exception as error:
                         return {"ok": False, "error": {"code": getattr(error, "code", "internal_error"),

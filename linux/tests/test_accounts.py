@@ -204,3 +204,71 @@ class MobileAccountsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UsageFormulaTests(unittest.TestCase):
+    """§4.1: la misma fórmula de ritmo y proyección en Mac, Linux y Android."""
+
+    NOW = 1_794_000_000
+
+    def stamp(self, at):
+        return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(at))
+
+    def test_pace_projection_and_exhaustion(self):
+        from uniconnect.accounts_usage import pace
+        limit = {"id": "seven_day", "used_percent": 51.0, "resets_at": self.stamp(self.NOW + 2 * 86400),
+                 "window_minutes": 10080}
+        usage = {"observed_at": self.stamp(self.NOW)}
+        history = [{"at": self.stamp(self.NOW - 86400), "limits": {"seven_day": 41.0}},
+                   {"at": self.stamp(self.NOW - 9 * 86400), "limits": {"seven_day": 2.0}}]  # Fuera de la ventana.
+        daily, projection, exhausted = pace(limit, usage, history, self.NOW)
+        self.assertAlmostEqual(daily, 10.0)
+        self.assertAlmostEqual(projection, 71.0)
+        self.assertIsNone(exhausted)
+        fast = [{"at": self.stamp(self.NOW - 3600), "limits": {"seven_day": 41.0}}]
+        daily, projection, exhausted = pace(limit, usage, fast, self.NOW)
+        self.assertGreater(projection, 100)
+        self.assertAlmostEqual(exhausted, self.NOW + 49 / 10 * 3600)  # «Se agotaría el …».
+        close = [{"at": self.stamp(self.NOW - 600), "limits": {"seven_day": 50.0}}]
+        self.assertIsNone(pace(limit, usage, close, self.NOW))  # Menos de 30 min entre muestras: nada.
+
+    def test_a_passed_reset_is_zero_and_names_follow_the_contract(self):
+        from uniconnect.accounts_usage import effective, limit_name, span
+        self.assertEqual(effective({"used_percent": 88.0, "resets_at": self.stamp(self.NOW - 60)}, self.NOW), (0.0, True))
+        self.assertEqual(effective({"used_percent": 88.0, "resets_at": self.stamp(self.NOW + 60)}, self.NOW), (88.0, False))
+        self.assertEqual(limit_name({"id": "seven_day_opus"}, "claude"), "Semana · Opus")
+        self.assertEqual(limit_name({"id": "primary", "window_minutes": 300}, "codex"), "5 horas")
+        self.assertEqual(limit_name({"id": "secondary", "window_minutes": 10080}, "codex"), "Semana")
+        self.assertEqual(limit_name({"id": "x", "window_minutes": 120}, "codex"), "2 h")
+        self.assertEqual((span(2 * 86400 + 3 * 3600 + 59), span(3 * 3600 + 20 * 60), span(30)), ("2 d 3 h", "3 h 20 min", "1 min"))
+
+
+class CodexResetTests(unittest.TestCase):
+    def test_spends_on_the_first_ok_window_of_that_account_in_that_host(self):
+        calls = []
+        account = dict(ACCOUNT, email="it@iberiavo.com", method="chatgpt")
+
+        class Transport:
+            def __init__(self, command, socket_name=None):
+                pass
+
+            def run_python(self, source, arguments, timeout):
+                calls.append(arguments)
+                if arguments and arguments[0].startswith("["):
+                    output = [{"version": 1, "socket": "uniconnect-local", "sessions": [
+                        session("uc-x", {"provider": "codex", "account": account})]}]
+                    return Completed("UC_ACCOUNTS_V1 " + json.dumps(output) + "\n")
+                return Completed(json.dumps({"version": 1, "codex_reset": {"outcome": "reset", "usage": {"limits": []}}}) + "\n")
+
+        reader = AccountsReader(transport=Transport, history=UsageHistory(Path(tempfile.mkdtemp()) / "h.json"))
+        boxes = [box("w", "LOCAL", "local", [{"id": "x", "name": "codex", "tmux": "uc-x"}])]
+        key = "6f1c9a1e-2b3d-4c5e-8f70-112233445566"
+        result = reader.codex_reset(boxes, "codex:it@iberiavo.com", "local", key)
+        self.assertEqual(result, {"account_key": "codex:it@iberiavo.com", "host_key": "local", "outcome": "reset",
+                                  "usage": {"limits": []}})
+        self.assertEqual(calls[-1], ["--socket", "uniconnect-local", "--session", "uc-x", "--codex-reset", key])
+        for args, code in ((("codex:nadie@x.com", "local", key), "not_found"), (("claude:it@iberiavo.com", "local", key),
+                           "invalid_params"), (("codex:it@iberiavo.com", "local", "no-es-uuid"), "invalid_params")):
+            with self.subTest(args=args), self.assertRaises(RPCError) as caught:
+                reader.codex_reset(boxes, *args)
+            self.assertEqual(caught.exception.code, code)

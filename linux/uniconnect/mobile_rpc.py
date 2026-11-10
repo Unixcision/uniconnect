@@ -88,7 +88,7 @@ class MobileRPC:
             return action()
         if method == "mobile.host.status":
             ready = capture_dependencies_ready()
-            capabilities = ["accounts.v1", "events.v1", "terminal.viewport.v1", "notifications.v1", "terminal.pty.v1",
+            capabilities = ["accounts.v1", "accounts.codex_reset.v1", "events.v1", "terminal.viewport.v1", "notifications.v1", "terminal.pty.v1",
                             "window_details.v1"]
             if getattr(self.window, "relaunch", None) is not None:
                 capabilities += RELAUNCH_CAPABILITIES
@@ -117,6 +117,9 @@ class MobileRPC:
         if operation == "accounts.list":
             # accounts.v1: sondas fuera de GTK (≤ 12 s); el modelo se copia en el hilo de GTK.
             return self.accounts_dispatch(params, authorized)
+        if operation == "accounts.codex_reset":
+            # accounts-v1 §5: la única escritura; el móvil ya pidió confirmación.
+            return self.accounts_dispatch(params, authorized, reset=True)
         if operation == "terminal.details":
             # Resolución en el hilo GTK; la sonda (hasta 8 s) nunca bloquea GTK ni el plazo de 5 s.
             return self.details_dispatch(params, authorized)
@@ -275,11 +278,12 @@ class MobileRPC:
 
     # ----- window_details.v1 -----
 
-    def accounts_dispatch(self, params, authorized):
-        """`mobile.accounts.list`: con qué cuenta está cada IA, leído en vivo (contracts/accounts-v1)."""
+    def accounts_dispatch(self, params, authorized, *, reset=False):
+        """`mobile.accounts.list` (y `codex_reset`): con qué cuenta está cada IA, leído en vivo (accounts-v1)."""
         from .accounts import AccountsReader
-        workspace_id = params.get("workspace_id") if isinstance(params, dict) else None
-        if isinstance(params, dict) and "workspace_id" in params and (not isinstance(workspace_id, str) or not workspace_id):
+        params = params if isinstance(params, dict) else {}
+        workspace_id = None if reset else params.get("workspace_id")
+        if not reset and "workspace_id" in params and (not isinstance(workspace_id, str) or not workspace_id):
             raise RPCError("invalid_params", "El espacio de trabajo pedido no es válido.")
 
         def resolve():
@@ -293,6 +297,8 @@ class MobileRPC:
 
         boxes = self.on_main(resolve)
         reader = getattr(self.window, "accounts_reader", None) or AccountsReader(transport=self.transport_factory)
+        if reset:
+            return reader.codex_reset(boxes, params.get("account_key"), params.get("host_key"), params.get("idempotency_key"))
         return AccountsReader.only(reader.read(boxes), workspace_id)
 
     def details_dispatch(self, params, authorized):
@@ -676,7 +682,7 @@ class MobileRPC:
         if terminals_filter and not any(box["terminals"] for box in boxes):
             raise RPCError("not_found", "No se encontró la terminal")
         return {"workspaces": boxes, "display_name": socket.gethostname(),
-                "capabilities": ["accounts.v1", "activity.v1", "box_close", "box_update", "file_put.v1", "inbox.v1",
+                "capabilities": ["accounts.v1", "accounts.codex_reset.v1", "activity.v1", "box_close", "box_update", "file_put.v1", "inbox.v1",
                                  "transcribe.v1",
                                  "ssh_create.v1", "window_details.v1"]
                 + (list(RELAUNCH_CAPABILITIES) if getattr(self.window, "relaunch", None) is not None else [])}

@@ -16,6 +16,7 @@ import time
 
 from .agent_tree import AgentTree
 from .arrangement import WorkspaceArrangement
+from .mobile_protocol import RPCError
 from .resume_catalog import AgentResumeCatalog
 from .transport import SSHCommand, Transport, TransportError
 from .vault import atomic_write, private_read
@@ -348,6 +349,47 @@ class AccountsReader:
                     entry["usage"] is None or parse_iso(usage["observed_at"]) > parse_iso(entry["usage"]["observed_at"])):
                 entry["usage"] = dict(usage, host_key=item["host_key"])
         return sorted(accounts.values(), key=lambda entry: (-entry["windows"], entry["email"], entry["provider"]))
+
+    def codex_reset(self, boxes, account_key, host_key, idempotency_key):
+        """§5: gasta un reseteo gratis de esa cuenta de Codex en ese host. La única escritura de accounts-v1.
+
+        Se leen las cuentas AHORA, se elige la primera ventana `ok` de esa cuenta en ese host y se lanza
+        allí la sonda con ``--codex-reset``, que llama al app-server de ESE Codex y vuelve a leer su uso.
+        """
+        import uuid
+        try:
+            if (not isinstance(account_key, str) or not account_key.startswith("codex:") or len(account_key) > 330
+                    or not isinstance(host_key, str) or not host_key
+                    or str(uuid.UUID(str(idempotency_key))) != str(idempotency_key).lower()):
+                raise ValueError()
+        except ValueError:
+            raise RPCError("invalid_params", "Indica la cuenta de Codex, el host y la clave de esta confirmación.") from None
+        response = self.read(boxes)
+        window = next((item for item in response["windows"] if item["host_key"] == host_key and item["state"] == "ok"
+                       and (item.get("agent") or {}).get("provider") == "codex"
+                       and "codex:" + ((item.get("account") or {}).get("email") or "").lower() == account_key.lower()), None)
+        if window is None:
+            raise RPCError("not_found", "No hay ninguna ventana de esa cuenta en ese host.")
+        boxes = self.resolve_labels(copy.deepcopy(boxes))
+        hosts = self.hosts_of(boxes)
+        box = next(item for item in boxes if item["workspace"]["id"] == window["workspace_id"])
+        record = next(item for item in box["windows"] if item["id"] == window["terminal_id"])
+        host = hosts[host_key]
+        try:
+            command = SSHCommand.parse(host["connection"]) if host["kind"] == "ssh" else None
+            socket_name = AgentTree.socket_of(box["workspace"], record)
+            completed = self.transport(command, socket_name=socket_name).run_python(
+                PROBE.read_bytes(), ["--socket", socket_name, "--session", record["tmux"],
+                                     "--codex-reset", str(idempotency_key).lower()], timeout=14)
+            line = next((item for item in reversed((completed.stdout or "").splitlines()) if item.startswith("{")), "")
+            result = json.loads(line).get("codex_reset") or {}
+        except Exception:
+            result = {}
+        if not result.get("outcome"):
+            raise RPCError("unavailable", "El host no contestó o no hay Codex al que preguntar ({cause}).".format(
+                cause=result.get("error") or "sin_respuesta"))
+        return {"account_key": account_key, "host_key": host_key, "outcome": result["outcome"],
+                "usage": result.get("usage")}
 
     @staticmethod
     def only(response, workspace_id):

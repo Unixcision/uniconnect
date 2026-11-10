@@ -14,6 +14,7 @@ gi.require_version("Gtk", "3.0")
 from gi.repository import GLib, Gtk
 
 from .accounts import NO_AI, UNREAD, AccountsReader, color_of
+from .accounts_usage import UsageView
 from .vault import atomic_write, private_read
 
 STATE_TEXT = {"sin_sesion": "Sin sesión", "desconocida": "Cuenta no expuesta", "host_inaccesible": "Host sin respuesta",
@@ -62,13 +63,17 @@ class AccountsWindow(Gtk.Window):
         header.pack_end(Gtk.Label(label=self._("Siempre delante")))
         self.header = header
 
-        body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, margin=12)
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, margin=12)
+        self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE)
+        switcher = Gtk.StackSwitcher(stack=self.stack, halign=Gtk.Align.CENTER)
+        outer.pack_start(switcher, False, False, 0)
+        body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         providers = Gtk.Box(spacing=8)
         providers.pack_start(Gtk.Label(label=self._("IA:")), False, False, 0)
         self.provider_chips = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, max_children_per_line=12,
                                           row_spacing=4, column_spacing=4, hexpand=True)
         providers.pack_start(self.provider_chips, True, True, 0)
-        body.pack_start(providers, False, False, 0)
+        outer.pack_start(providers, False, False, 0)  # La IA elegida vale para las dos vistas.
         filters = Gtk.Box(spacing=8)
         self.chips = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, max_children_per_line=12, row_spacing=4,
                                  column_spacing=4, hexpand=True)
@@ -98,7 +103,11 @@ class AccountsWindow(Gtk.Window):
         scroll = Gtk.ScrolledWindow(vexpand=True)
         scroll.add(self.rows)
         body.pack_start(scroll, True, True, 0)
-        self.add(body)
+        self.usage = UsageView(owner, go_to_window=self.go_to_window, reset_done=self.refresh)
+        self.stack.add_titled(body, "ventanas", self._("Ventanas"))
+        self.stack.add_titled(self.usage, "uso", self._("Uso por cuenta"))
+        outer.pack_start(self.stack, True, True, 0)
+        self.add(outer)
 
         self.connect("configure-event", self.remember_geometry)
         self.connect("destroy", self.on_destroy)
@@ -178,6 +187,7 @@ class AccountsWindow(Gtk.Window):
             return
         self.response, self.loaded_at = response, time.time()
         self.render()
+        self.usage.set_response(response, self.provider)
         self.tick()
 
     def tick(self):
@@ -205,8 +215,17 @@ class AccountsWindow(Gtk.Window):
         self.render()
 
     def choose_provider(self, provider):
-        """§4.2: al cambiar de IA, la ficha de cuenta vuelve a «Todas»."""
+        """§4.2: al cambiar de IA, la ficha de cuenta vuelve a «Todas» (y «Uso por cuenta», solo esas)."""
         self.provider, self.filter = provider, ("all",)
+        self.render()
+        if self.response:
+            self.usage.set_response(self.response, self.provider)
+
+    def go_to_window(self, item, email):
+        """«Dónde está» → esa ventana en la pestaña «Ventanas»."""
+        self.stack.set_visible_child_name("ventanas")
+        self.filter = ("email", email)
+        self.search.set_text(item.get("window") or "")
         self.render()
 
     def candidates(self, *, any_provider=False):
