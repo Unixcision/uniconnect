@@ -328,6 +328,23 @@ Nada de lo que sigue cambia las fases, el token ni el escalado de arriba.
   (viene con «No, exit» marcado). Si el equipo lo responde, solo puede ser para la carpeta donde
   esa misma conversación ya corría. En cualquier otro caso, `necesita_usuario`.
 
+### Diálogos de Codex 0.166+ al reabrir (coordNov, 10-11)
+Medido en NOTBETTING con un Codex 0.166 desechable. Codex 0.166 ya no deja abierto ni el rollout ni el
+cerrojo: la identidad sale de la tabla `threads` (la regla de `agent-tree-v1`) y la configuración, del
+rollout que da `threads.rollout_path`, que sigue escribiendo. Su TUI arranca `codex app-server` como
+hijos, que no cuentan como la IA del panel.
+- **«Update available» → «Skip»**, la de solo esta vez, **por su texto y nunca por posición**. Jamás
+  «Update now» ni «Skip until next version». Solo si el diálogo está vivo (sus tres opciones justo
+  encima de «enter continue · esc skip», al final de la pantalla), solo durante la verificación de un
+  relanzado o un update y solo para el Codex que se acaba de reabrir con esa conversación.
+- **«This conversation is open in another app … press R»** justo tras reabrir: su servidor de fondo
+  compartido tarda unos segundos en soltar al cliente cerrado. Se pulsa **«r»** (nunca «fork» ni salir),
+  a los 3 s de verlo y luego cada 4 s, como mucho 4 veces, y solo para ese mismo Codex. Si de verdad
+  está abierta en otra app, no cambia nada y acaba en `necesita_usuario`.
+- Lo contestado va al resultado en `answered` (`codex_update_skip`, `codex_retry_open_elsewhere`;
+  `claude_trust_folder` para la confianza de carpeta de Claude) y al diario (`relaunch.dialog_answered`).
+- Cualquier otro diálogo sigue siendo `necesita_usuario`.
+
 ### Resultado por objetivo (añadidos)
 `version`, `model`, `effort` (lo que dice la barra de estado tras reabrir, si se puede leer),
 `background_saved`, `message_sent` y `draft_restored`. Ejemplo en `apply-update-response.json`.

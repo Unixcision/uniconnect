@@ -29,7 +29,10 @@ EFFORTS = ("low", "medium", "high", "xhigh", "max")
 # Lo que el plan enseña de cada Claude antes de confirmar, y lo que vuelve en su resultado.
 PLAN_FIELDS = ("background", "draft", "context_tokens", "message")
 RESULT_FIELDS = ("state", "cause", "effective_id", "escalation", "dropped_options", "version", "model", "effort",
-                 "background_saved", "message_sent", "draft_restored")
+                 "background_saved", "message_sent", "draft_restored", "answered")
+ANSWERED_TEXT = {"codex_update_skip": "diálogo de actualización de Codex: Skip",
+                 "claude_trust_folder": "confianza de carpeta de Claude: Yes, I trust this folder",
+                 "codex_retry_open_elsewhere": "Codex: «abierta en otra app», reintentado con r"}
 PHASES = {
     "agent.relaunch": ("planificado", "cerrando", "reabriendo", "verificado"),
     # relaunch-v1 (09-11): «Actualizar Claude» es el mismo proceso, con las mismas fases.
@@ -332,6 +335,9 @@ class RelaunchService:
                 self.log.write("info" if event == "relaunch.session_recreated" else "warn", "relaunch", event, **fields)
             for option in result.get("dropped_options", []):
                 self.log.warn("relaunch", "relaunch.option_dropped", **fields, detail={"option": option})
+            for dialog in result.get("answered", []):
+                self.log.info("relaunch", "relaunch.dialog_answered", **fields,
+                              detail={"dialog": dialog, "text": ANSWERED_TEXT.get(dialog, dialog)})
             self.log.info("relaunch", "relaunch.resumed", **fields,
                           detail={"provider": record.get("agent"), "escalation": result.get("escalation")})
         else:

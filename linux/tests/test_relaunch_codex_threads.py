@@ -104,5 +104,83 @@ class CodexThreadTests(unittest.TestCase):
         self.assertEqual(error.exception.cause, "dialogo_desconocido")
 
 
+class CodexUpdateDialogTests(unittest.TestCase):
+    """coordNov 10-11: «Skip» por su texto, solo ese diálogo y solo el Codex que se acaba de reabrir."""
+
+    SCREEN = ["  Update available · 0.166.0 → 0.167.0",
+              "  Release notes: https://github.com/openai/codex/releases/latest",
+              "{0} 1. Update now (runs `sh -c 's=$(curl -fsSL https://chatgpt.com/codex/install.sh) && CODEX_NON_INTERACTIVE=",
+              "{1} 2. Skip",
+              "{2} 3. Skip until next version",
+              "  enter continue · esc skip"]
+
+    def setUp(self):
+        self.worker = TargetWorker({"session": "fixture", "socket": "fixture", "provider": "codex",
+                                    "catalog": AgentResumeCatalog().providers})
+        self.worker.answered, self.keys, self.cursor = [], [], 0
+        self.agent = {"pid": 7, "argv": ["/x/codex", "resume", THREAD, "--yolo"]}
+        self.worker.descendants = lambda pid: {7: self.agent, 8: {"pid": 8, "argv": ["/x/codex", "app-server"]}}
+
+        def tmux(*args):
+            if args[0] == "send-keys":
+                self.keys.append(args[-1])
+                self.cursor = min(2, self.cursor + 1) if args[-1] == "Down" else max(0, self.cursor - 1) if args[-1] == "Up" else self.cursor
+                return ""
+            marks = ["›" if index == self.cursor else " " for index in range(3)]
+            return "\n".join(line.format(*marks) for line in self.SCREEN)
+        self.worker.tmux = tmux
+        self.proof = {"pane": {"pane": "%1"}, "effective_id": THREAD}
+
+    def test_skip_is_chosen_by_its_text_and_recorded(self):
+        self.assertTrue(self.worker.answer_codex_update(self.proof, {"pid": 1}))
+        self.assertEqual(self.keys, ["Down", "Enter"])  # Del «Update now» marcado a «Skip», y solo entonces Intro.
+        self.assertEqual(self.worker.answered, ["codex_update_skip"])
+
+    def test_anything_else_is_left_to_a_person(self):
+        self.agent = {"pid": 7, "argv": ["/x/codex", "resume", "otra-conversacion"]}
+        self.assertFalse(self.worker.answer_codex_update(self.proof, {"pid": 1}))
+        self.agent = {"pid": 7, "argv": ["/x/codex", "resume", THREAD]}
+        original = list(self.SCREEN)
+        self.SCREEN = [line.replace("2. Skip", "2. Skip and remember") for line in original]
+        self.assertFalse(self.worker.answer_codex_update(self.proof, {"pid": 1}))
+        # Un aviso ya contestado que sigue arriba en pantalla, con la IA debajo: no es el diálogo vivo.
+        self.SCREEN = original + ["› Responde solo con la palabra: ok", "• ok", "/exit"]
+        self.assertFalse(self.worker.answer_codex_update(self.proof, {"pid": 1}))
+        self.assertEqual(self.keys, [])  # No se ha tecleado nada.
+        self.worker.tmux = lambda *args: "› Ask Codex to do anything"
+        self.assertFalse(self.worker.answer_codex_update(self.proof, {"pid": 1}))
+
+
+class CodexOpenElsewhereTests(unittest.TestCase):
+    """Codex 0.166+: su servidor compartido tarda en soltar al cliente cerrado; «r» unos segundos después."""
+
+    SCREEN = "› Responde solo con la palabra: ok\n  🔒  This conversation is open in another app\n" \
+             "      Close it there and press R to continue here.\n   r retry   f fork   esc/^c/q exit   ^t transcript"
+
+    def test_retries_with_r_after_a_while_at_most_four_times_and_only_for_its_codex(self):
+        worker = TargetWorker({"session": "fixture", "socket": "fixture", "provider": "codex",
+                               "catalog": AgentResumeCatalog().providers})
+        worker.answered, keys, now = [], [], [100.0]
+        worker.clock = lambda: now[0]
+        agent = {"pid": 7, "argv": ["/x/codex", "resume", THREAD]}
+        worker.descendants = lambda pid: {7: agent}
+        worker.tmux = lambda *args: keys.append(args[-1]) or "" if args[0] == "send-keys" else self.SCREEN
+        proof = {"pane": {"pane": "%1"}, "effective_id": THREAD}
+        for moment in (100, 101, 103.5, 105, 108, 112, 116, 120, 200):
+            now[0] = moment
+            worker.retry_codex_open_elsewhere(proof, {"pid": 1})
+        self.assertEqual(keys, ["r", "r", "r", "r"])  # Tras 3 s, luego cada 4 s, y no más de 4.
+        self.assertEqual(worker.answered, ["codex_retry_open_elsewhere"])
+        other = TargetWorker({"session": "fixture", "socket": "fixture", "provider": "codex",
+                              "catalog": AgentResumeCatalog().providers})
+        other.answered, other.clock = [], (lambda: 999.0)
+        other.descendants = lambda pid: {7: {"pid": 7, "argv": ["/x/codex", "resume", "otra"]}}
+        other.tmux = worker.tmux
+        keys.clear()
+        other.open_elsewhere_since = 0
+        other.retry_codex_open_elsewhere(proof, {"pid": 1})
+        self.assertEqual(keys, [])  # No es el Codex que reabrimos: nada.
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1058,6 +1058,87 @@ class TargetWorker:
             time.sleep(0.2)
 
     TRUST_OPTION = re.compile(r"(\d+)\.\s*Yes, I trust this folder")
+    CODEX_UPDATE_OPTION = re.compile(r"\s*(›)?\s*(\d+)\.\s+(.*?)\s*")
+
+    def codex_update_dialog(self, screen):
+        """Las tres opciones del aviso de actualización si es lo que está AL FINAL de la pantalla, o None.
+
+        La pantalla de Codex conserva lo de antes: un aviso ya contestado puede seguir visible arriba.
+        Solo vale el diálogo vivo: sus tres opciones justo encima de «enter continue · esc skip», que es
+        la última línea con texto.
+        """
+        lines = [line for line in screen.splitlines() if line.strip()]
+        if len(lines) < 5 or not re.fullmatch(r"\s*enter continue · esc skip\s*", lines[-1]):
+            return None
+        if not any("Update available" in line for line in lines[-8:-4]):
+            return None
+        matches = [self.CODEX_UPDATE_OPTION.fullmatch(line) for line in lines[-4:-1]]
+        if not all(matches):
+            return None
+        options = [(match.group(1) is not None, match.group(3)) for match in matches]
+        texts = [text for _, text in options]
+        if (not texts[0].startswith("Update now") or texts[1] != "Skip" or texts[2] != "Skip until next version"
+                or sum(marked for marked, _ in options) != 1):
+            return None
+        return options
+
+    def retry_codex_open_elsewhere(self, proof, root):
+        """Codex 0.166+: «This conversation is open in another app … press R» justo tras reabrir.
+
+        Su servidor de fondo compartido tarda unos segundos en soltar al cliente que acabamos de cerrar
+        (medido en NOTBETTING, 10-11). Se reintenta con «r» (nunca «fork» ni salir), unos segundos
+        después de verlo y como mucho 4 veces, y solo para el Codex que reabrimos con ESTA conversación.
+        Si de verdad está abierta en otra app, reintentar no cambia nada y acaba en una persona.
+        """
+        pane = proof["pane"]["pane"]
+        lines = [line for line in self.tmux("capture-pane", "-p", "-t", pane).splitlines() if line.strip()]
+        tail = lines[-4:]
+        if not (any("This conversation is open in another app" in line for line in tail)
+                and re.fullmatch(r"\s*r retry\s+f fork\s+.*", tail[-1] if tail else "")):
+            self.open_elsewhere_since = None
+            return
+        asking = [child for child in self.descendants(root["pid"]).values()
+                  if self.is_provider("codex", child["argv"]) and not self.codex_background(child["argv"])]
+        if len(asking) != 1 or proof["effective_id"] not in asking[0]["argv"]:
+            return
+        now = self.clock()
+        since = getattr(self, "open_elsewhere_since", None)
+        if since is None:
+            self.open_elsewhere_since = now
+            return
+        retries = getattr(self, "open_elsewhere_retries", 0)
+        if retries >= 4 or now - since < 3 + 4 * retries:
+            return
+        self.open_elsewhere_retries = retries + 1
+        self.tmux("send-keys", "-t", pane, "-l", "--", "r")
+        if "codex_retry_open_elsewhere" not in self.answered:
+            self.answered.append("codex_retry_open_elsewhere")
+
+    def answer_codex_update(self, proof, root):
+        """relaunch-v1 (coordNov 10-11): «Skip» del aviso de actualización de Codex, por su texto.
+
+        Solo si la pantalla es exactamente ese diálogo (Update available con «Update now», «Skip» y
+        «Skip until next version»), solo para el Codex que se acaba de reabrir con ESTA conversación y
+        solo «Skip», la de esta vez: nunca «Update now» ni «Skip until next version». Cualquier otra
+        cosa sigue siendo de una persona (``dialogo_desconocido``).
+        """
+        pane = proof["pane"]["pane"]
+        options = self.codex_update_dialog(self.tmux("capture-pane", "-p", "-t", pane))
+        if options is None:
+            return False  # No es ese diálogo, o es uno viejo que sigue en pantalla: no se toca nada.
+        asking = [child for child in self.descendants(root["pid"]).values()
+                  if self.is_provider("codex", child["argv"]) and not self.codex_background(child["argv"])]
+        if len(asking) != 1 or proof["effective_id"] not in asking[0]["argv"]:
+            return False  # No es el Codex que acabamos de reabrir: lo verá una persona.
+        current = next(index for index, (marked, _) in enumerate(options) if marked)
+        for _ in range(abs(1 - current)):
+            self.tmux("send-keys", "-t", pane, "Down" if current < 1 else "Up")
+        current = self.codex_update_dialog(self.tmux("capture-pane", "-p", "-t", pane))
+        if current is None or [text for marked, text in current if marked] != ["Skip"]:
+            return False  # El cursor no está en «Skip»: no se confirma nada.
+        self.tmux("send-keys", "-t", pane, "Enter")
+        self.answered.append("codex_update_skip")
+        return True
 
     def answer_trust(self, proof, root):
         """relaunch-v1 (Dani, 09-11): «Yes, I trust this folder», por su texto, solo para esta conversación.
@@ -1079,6 +1160,7 @@ class TargetWorker:
         if len(options) != 1:
             raise Unavailable("confianza_carpeta")  # Never by position: only the option its text names.
         self.tmux("send-keys", "-t", pane, "-l", "--", options[0])
+        getattr(self, "answered", []).append("claude_trust_folder")
         deadline = self.clock() + 5
         while self.clock() < deadline:
             if "Yes, I trust this folder" not in self.tmux("capture-pane", "-p", "-t", pane):
@@ -1824,10 +1906,15 @@ class TargetWorker:
         self.tmux("send-keys", "-t", proof["pane"]["pane"], "-l", "--", command + "\n")
         self.request["resumed"] = True
         deadline = self.clock() + 45
-        trusted = False
+        trusted = skipped = False
+        self.answered = []
         while self.clock() < deadline:
             if self.request.get("provider") == "claude" and not trusted:
                 trusted = self.answer_trust(proof, root)
+            if self.request.get("provider") == "codex":
+                if not skipped:
+                    skipped = self.answer_codex_update(proof, root)
+                self.retry_codex_open_elsewhere(proof, root)
             try:
                 current = self.inspect()
                 if (current["effective_id"] == proof["effective_id"] and current["generation"] != proof["generation"]
@@ -1836,6 +1923,8 @@ class TargetWorker:
                     self.require_empty_composer(current)
                     extra = self.after_reopen(current) if self.request.get("provider") == "claude" else {}
                     if self.request.get("verb") != "agent.recover":
+                        if self.answered:
+                            extra["answered"] = list(self.answered)  # Al diario: qué diálogo se contestó.
                         self.write(journal, {"state": "verificado", "effective_id": proof["effective_id"],
                                              "escalation": escalation, **extra,
                                              **({"dropped_options": proof["dropped_options"]}
@@ -1843,8 +1932,9 @@ class TargetWorker:
                     return current
             except (Unavailable, OSError):
                 pass
-            if self.request.get("provider") == "agy":
-                # Antigravity can refresh its pane-bound statusLine metadata
+            if self.request.get("provider") in ("agy", "codex"):
+                # Codex 0.166+: un diálogo quieto («abierta en otra app») no saca salida y su reintento
+                # se decide por tiempo. Antigravity can refresh its pane-bound statusLine metadata
                 # by changing tmux options without producing pane output. A
                 # purely output-driven wait would miss fresh idle proof until
                 # the whole deadline expires. Keep the event-driven fast path,
