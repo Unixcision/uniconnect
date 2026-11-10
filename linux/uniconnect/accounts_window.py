@@ -19,6 +19,9 @@ from .vault import atomic_write, private_read
 STATE_TEXT = {"sin_sesion": "Sin sesión", "desconocida": "Cuenta no expuesta", "host_inaccesible": "Host sin respuesta",
               "sin_ia": "Sin IA", "sesion_no_viva": "La sesión tmux no está viva", "sin_tmux": "Sin tmux",
               "identidad_ambigua": "Identidad ambigua", "panel_muerto": "Panel muerto"}
+HOST_ERROR_TEXT = {"sin_respuesta": "no contestó a tiempo", "sin_python3": "no tiene python3",
+                   "ssh_fallo": "falló la conexión SSH", "salida_no_valida": "respondió algo que no es la sonda",
+                   "tmux_no_disponible": "no tiene tmux", "tmux_fallo": "tmux dio un error"}
 METHOD_TEXT = {"api_key": "Clave de API", "bedrock": "Bedrock", "vertex": "Vertex", "foundry": "Foundry"}
 CSS = b"""
 .uc-accounts-chip { border-radius: 14px; padding: 2px 10px; }
@@ -37,7 +40,7 @@ class AccountsWindow(Gtk.Window):
         super().__init__(title=owner._("Cuentas de IA"))
         self.owner, self._ = owner, owner._
         self.response, self.reading, self.closed = None, False, False
-        self.filter, self.mode, self.show_no_ai = ("all",), "workspace", False
+        self.filter, self.mode, self.show_no_ai, self.provider = ("all",), "workspace", False, None
         self.geometry_path = owner.store.root / "accounts-window.json"
         self.set_default_size(1040, 720)
         self.set_size_request(760, 520)
@@ -60,6 +63,12 @@ class AccountsWindow(Gtk.Window):
         self.header = header
 
         body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, margin=12)
+        providers = Gtk.Box(spacing=8)
+        providers.pack_start(Gtk.Label(label=self._("IA:")), False, False, 0)
+        self.provider_chips = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, max_children_per_line=12,
+                                          row_spacing=4, column_spacing=4, hexpand=True)
+        providers.pack_start(self.provider_chips, True, True, 0)
+        body.pack_start(providers, False, False, 0)
         filters = Gtk.Box(spacing=8)
         self.chips = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, max_children_per_line=12, row_spacing=4,
                                  column_spacing=4, hexpand=True)
@@ -73,11 +82,13 @@ class AccountsWindow(Gtk.Window):
         grouping = Gtk.Box(spacing=12)
         by_space = Gtk.RadioButton.new_with_label(None, self._("Por espacio"))
         by_account = Gtk.RadioButton.new_with_label_from_widget(by_space, self._("Por cuenta"))
+        by_ai = Gtk.RadioButton.new_with_label_from_widget(by_space, self._("Por IA"))
         by_space.connect("toggled", lambda button: button.get_active() and self.set_mode("workspace"))
         by_account.connect("toggled", lambda button: button.get_active() and self.set_mode("account"))
+        by_ai.connect("toggled", lambda button: button.get_active() and self.set_mode("provider"))
         no_ai = Gtk.Switch(valign=Gtk.Align.CENTER)
         no_ai.connect("notify::active", lambda switch, _: self.set_no_ai(switch.get_active()))
-        for widget in (by_space, by_account, Gtk.Label(label="  "), Gtk.Label(label=self._("Ventanas sin IA")), no_ai):
+        for widget in (by_space, by_account, by_ai, Gtk.Label(label="  "), Gtk.Label(label=self._("Ventanas sin IA")), no_ai):
             grouping.pack_start(widget, False, False, 0)
         body.pack_start(grouping, False, False, 0)
 
@@ -193,9 +204,15 @@ class AccountsWindow(Gtk.Window):
         self.filter = value
         self.render()
 
-    def candidates(self):
+    def choose_provider(self, provider):
+        """§4.2: al cambiar de IA, la ficha de cuenta vuelve a «Todas»."""
+        self.provider, self.filter = provider, ("all",)
+        self.render()
+
+    def candidates(self, *, any_provider=False):
         windows = self.response["windows"] if self.response else []
-        return [item for item in windows if self.show_no_ai or item["state"] not in NO_AI]
+        return [item for item in windows if (self.show_no_ai or item["state"] not in NO_AI)
+                and (any_provider or self.provider is None or (item.get("agent") or {}).get("provider") == self.provider)]
 
     def matches(self, item, hosts):
         account = item.get("account") or {}
@@ -214,25 +231,40 @@ class AccountsWindow(Gtk.Window):
         return True
 
     # ----- pintar -----
-    def chip(self, label, value, color=None):
+    def chip(self, label, value, color=None, *, into=None, active=None, choose=None):
         button = Gtk.ToggleButton()
         button.get_style_context().add_class("uc-accounts-chip")
         markup = ('<span foreground="%s">●</span> ' % color if color else "") + escape(label)
         text = Gtk.Label()
         text.set_markup(markup)
         button.add(text)
-        button.set_active(self.filter == value)
-        button.connect("toggled", lambda widget: widget.get_active() and self.choose(value))
-        self.chips.add(button)
+        button.set_active(self.filter == value if active is None else active)
+        button.connect("toggled", lambda widget: widget.get_active() and (choose or self.choose)(value))
+        (into or self.chips).add(button)
 
     def render(self):
-        for container in (self.chips, self.warnings, self.rows):
+        for container in (self.provider_chips, self.chips, self.warnings, self.rows):
             for child in container.get_children():
                 container.remove(child)
                 child.destroy()
         if not self.response:
             return
         hosts = {host["host_key"]: host for host in self.response["hosts"]}
+        # §4.2: una ficha por cada IA que HAYA en esta lectura (sin lista fija), de más a menos ventanas.
+        everything = self.candidates(any_provider=True)
+        providers = {}
+        for item in everything:
+            agent = item.get("agent") or {}
+            if agent.get("provider"):
+                name, count = providers.get(agent["provider"], (agent.get("display_name") or agent["provider"], 0))
+                providers[agent["provider"]] = (name, count + 1)
+        if self.provider is not None and self.provider not in providers:
+            self.provider = None
+        self.chip(self._("Todas las IA · {n}").format(n=len(everything)), None, into=self.provider_chips,
+                  active=self.provider is None, choose=self.choose_provider)
+        for provider, (name, count) in sorted(providers.items(), key=lambda pair: (-pair[1][1], pair[1][0])):
+            self.chip("%s · %d" % (name, count), provider, into=self.provider_chips, active=self.provider == provider,
+                      choose=self.choose_provider)
         candidates = self.candidates()
         emails = {}
         for item in candidates:
@@ -250,16 +282,22 @@ class AccountsWindow(Gtk.Window):
 
         for host in self.response["hosts"]:
             if host["state"] != "ok":
-                reason = self._("la bóveda está cerrada") if host["state"] == "boveda_cerrada" else self._("no contestó")
+                reason = (self._("la bóveda está cerrada") if host["state"] == "boveda_cerrada" else
+                          self._(HOST_ERROR_TEXT.get(host.get("error"), "no contestó")))
+                if host.get("error_detail"):
+                    reason += " · " + host["error_detail"]
                 warning = Gtk.Label(label=self._("No se pudo leer {host}: {reason}").format(host=host["label"], reason=reason),
-                                    xalign=0)
+                                    xalign=0, selectable=True, wrap=True)
                 warning.get_style_context().add_class("uc-accounts-warning")
                 self.warnings.pack_start(warning, False, False, 0)
 
         shown = [item for item in candidates if self.matches(item, hosts)]
         groups = {}
         for item in shown:
-            if self.mode == "account":
+            if self.mode == "provider":
+                agent = item.get("agent") or {}
+                key = agent.get("provider") or "~"
+            elif self.mode == "account":
                 account = item.get("account") or {}
                 key = (account.get("email") or "").lower() if item["state"] == "ok" and account.get("email") else (
                     "~" + (self._("Sin sesión") if item["state"] == "sin_sesion" else
@@ -268,7 +306,7 @@ class AccountsWindow(Gtk.Window):
                 key = item["workspace_id"]
             groups.setdefault(key, []).append(item)
         order = (sorted(groups, key=lambda key: (key.startswith("~"), -len(groups[key]), key))
-                 if self.mode == "account" else list(groups))
+                 if self.mode in ("account", "provider") else list(groups))
         for key in order:
             self.rows.add(self.group_header(key, groups[key], hosts))
             for item in groups[key]:
@@ -277,6 +315,7 @@ class AccountsWindow(Gtk.Window):
             empty = Gtk.Label(label=self._("Ninguna ventana con este filtro."), margin=24)
             empty.get_style_context().add_class("dim-label")
             self.rows.add(empty)
+        self.provider_chips.show_all()
         self.chips.show_all()
         self.warnings.show_all()
         self.rows.show_all()
@@ -284,7 +323,17 @@ class AccountsWindow(Gtk.Window):
     def group_header(self, key, items, hosts):
         label = Gtk.Label(xalign=0)
         label.get_style_context().add_class("uc-accounts-group")
-        if self.mode == "account":
+        if self.mode == "provider":
+            if key == "~":
+                text = "%s · %d" % (escape(self._("Sin IA")), len(items))
+            else:
+                accounts = len({((item.get("account") or {}).get("email") or "").lower() for item in items
+                                if item["state"] == "ok" and (item.get("account") or {}).get("email")})
+                name = (items[0].get("agent") or {}).get("display_name") or key
+                text = "%s · %s" % (escape(name), escape(
+                    (self._("1 ventana") if len(items) == 1 else self._("{n} ventanas").format(n=len(items))) + " · " +
+                    (self._("1 cuenta") if accounts == 1 else self._("{m} cuentas").format(m=accounts))))
+        elif self.mode == "account":
             if key.startswith("~"):
                 text = "%s · %d" % (escape(key[1:]), len(items))
             else:
@@ -329,7 +378,7 @@ class AccountsWindow(Gtk.Window):
             plan.get_style_context().add_class("uc-accounts-plan")
             grid.attach(plan, 3, 0, 1, 1)
         details = [part for part in (account.get("os_user"), account.get("config")) if part]
-        if self.mode == "account":
+        if self.mode in ("account", "provider"):
             details.append(hosts.get(item["host_key"], {}).get("label") or item["host_key"])
         if details:
             small = Gtk.Label(xalign=0)

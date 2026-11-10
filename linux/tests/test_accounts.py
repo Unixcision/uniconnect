@@ -18,7 +18,8 @@ except (ImportError, ValueError):
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from contracts_dir import contract
-from uniconnect.accounts import AccountsReader, color_of, driver_source
+import tempfile
+from uniconnect.accounts import AccountsReader, UsageHistory, color_of, driver_source
 from uniconnect.mobile_protocol import RPCError
 from uniconnect.mobile_rpc import MobileRPC
 
@@ -63,8 +64,8 @@ class BuildTests(unittest.TestCase):
         remote = {"default": {"sessions": [
             session("app", {"provider": "claude", "as_root": True, "account": ACCOUNT}),
             session("cx", {"provider": "codex", "as_root": True, "account": {"state": "no_legible", "os_user": "root"}})]}}
-        results = {"local": (("ok", local), "T1"), "ssh:root@203.0.113.10:22": (("ok", remote), "T2"),
-                   "ssh:root@198.51.100.7:22": (("boveda_cerrada", None), "T3")}
+        results = {"local": (("ok", local, None, None), "T1"), "ssh:root@203.0.113.10:22": (("ok", remote, None, None), "T2"),
+                   "ssh:root@198.51.100.7:22": (("boveda_cerrada", None, None, None), "T3")}
         response = AccountsReader.build(boxes, hosts, results, checked_at="T9")
         expected = json.loads(contract("accounts-v1", "accounts-response.json").read_text())
         self.assertEqual(set(response), set(expected))
@@ -81,6 +82,9 @@ class BuildTests(unittest.TestCase):
         locked = next(item for item in response["windows"] if item["terminal_id"] == "g")
         self.assertEqual((locked["agent"], locked["account"]), (None, None))  # Sin la cuenta anterior.
         self.assertEqual([host["state"] for host in response["hosts"]], ["ok", "ok", "boveda_cerrada"])
+        self.assertEqual(set(response["accounts"][0]), set(expected["accounts"][0]))
+        self.assertEqual([(a["key"], a["windows"], a["host_keys"]) for a in response["accounts"]],
+                         [("claude:dev@notbetting.com", 2, ["local", "ssh:root@203.0.113.10:22"])])
         only = AccountsReader.only(response, "w2")
         self.assertEqual([item["terminal_id"] for item in only["windows"]], ["d", "e", "f"])
         self.assertEqual([host["host_key"] for host in only["hosts"]], ["ssh:root@203.0.113.10:22"])
@@ -95,7 +99,9 @@ class BuildTests(unittest.TestCase):
             def run_python(self, source, arguments, timeout):
                 calls.append((self.command.destination if self.command else "local", json.loads(arguments[0]), timeout))
                 if self.command:
-                    return Completed("", returncode=255)
+                    completed = Completed("", returncode=255)
+                    completed.stderr = "root@cliente: Permission denied (publickey).\n"
+                    return completed
                 output = [{"version": 1, "socket": "uniconnect-local",
                            "sessions": [session("uc-a", {"provider": "claude", "account": ACCOUNT})]}]
                 return Completed("banner del perfil\nUC_ACCOUNTS_V1 " + json.dumps(output) + "\n")
@@ -103,12 +109,16 @@ class BuildTests(unittest.TestCase):
         boxes = self.boxes()
         boxes[1]["connection"] = None  # Sin ssh -G en la prueba: la etiqueta guardada.
         boxes[2]["connection"] = "ssh root@cliente"
-        response = AccountsReader(transport=Transport).read(boxes)
+        history = UsageHistory(Path(tempfile.mkdtemp()) / "historia.json")
+        response = AccountsReader(transport=Transport, history=history).read(boxes)
         self.assertEqual(sorted(call[0] for call in calls), ["local", "root@cliente"])
         self.assertEqual(calls[[c[0] for c in calls].index("local")][1], [["uniconnect-local", ["uc-a", "uc-b"]]])
         self.assertTrue(all(call[2] == 10 for call in calls))
         states = {item["terminal_id"]: item["state"] for item in response["windows"]}
         self.assertEqual((states["a"], states["d"], states["g"]), ("ok", "host_inaccesible", "host_inaccesible"))
+        failed = next(host for host in response["hosts"] if host["host_key"].startswith("ssh:root@cliente"))
+        self.assertEqual((failed["error"], failed["error_detail"]),
+                         ("ssh_fallo", "root@cliente: Permission denied (publickey)."))
 
     def test_a_request_during_a_read_shares_it(self):
         started, release, runs = threading.Event(), threading.Event(), []
@@ -137,6 +147,23 @@ class BuildTests(unittest.TestCase):
         source = driver_source().decode()
         self.assertIn("def account_of(", source)
         self.assertNotIn('if __name__ == "__main__":\n    sys.exit(main())', source)
+
+
+class HistoryTests(unittest.TestCase):
+    def test_one_sample_per_five_minutes_seven_days_shown_fourteen_kept(self):
+        history = UsageHistory(Path(tempfile.mkdtemp()) / "accounts-usage-history.json")
+        base = 1_794_000_000
+        def account(at, percent):
+            stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(at))
+            return {"key": "claude:dev@notbetting.com",
+                    "usage": {"observed_at": stamp, "limits": [{"id": "seven_day", "used_percent": percent}]}}
+        history.record([account(base - 10 * 86400, 5.0)], base - 10 * 86400)
+        history.record([account(base, 40.0)], base)
+        shown = history.record([account(base + 120, 41.0)], base + 120)  # A menos de 5 min: la sustituye.
+        self.assertEqual([item["limits"]["seven_day"] for item in shown["claude:dev@notbetting.com"]], [41.0])
+        shown = history.record([account(base + 60, 99.0)], base + 400)  # Anterior a la última: no entra.
+        self.assertEqual([item["limits"]["seven_day"] for item in shown["claude:dev@notbetting.com"]], [41.0])
+        self.assertEqual(len(history.load()["claude:dev@notbetting.com"]), 2)  # La de hace 10 días se guarda.
 
 
 class PaletteTests(unittest.TestCase):
