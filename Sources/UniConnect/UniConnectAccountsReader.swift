@@ -147,7 +147,7 @@ actor UniConnectAccountsReader {
 
         let script = probeScript()
         var outputs: [String: UniConnectAccountsProbeOutput] = [:]
-        var failures: [String: String] = [:]
+        var failures: [String: ProbeFailure] = [:]
         var finishedAt: [String: Date] = [:]
         await withTaskGroup(of: (String, Result<UniConnectAccountsProbeOutput, ProbeFailure>, Date).self) { group in
             for job in jobs.values {
@@ -159,7 +159,7 @@ actor UniConnectAccountsReader {
             for await (id, output, at) in group {
                 switch output {
                 case .success(let value): outputs[id] = value
-                case .failure(let failure): failures[id] = failure.code
+                case .failure(let failure): failures[id] = failure
                 }
                 finishedAt[id] = at
             }
@@ -168,11 +168,15 @@ actor UniConnectAccountsReader {
         let checkedAt = now()
         var hostStates: [String: UniConnectAccountsSnapshot.HostState] = [:]
         var hostErrors: [String: String] = [:]
+        var hostErrorDetails: [String: String] = [:]
         var hostCheckedAt: [String: Date] = [:]
         for job in jobs.values {
             let ok = outputs[job.id] != nil
             if !ok || hostStates[job.hostKey] == nil { hostStates[job.hostKey] = ok ? .ok : .hostUnreachable }
-            if let failure = failures[job.id] { hostErrors[job.hostKey] = failure }
+            if let failure = failures[job.id] {
+                hostErrors[job.hostKey] = failure.code
+                if let detail = failure.detail { hostErrorDetails[job.hostKey] = detail }
+            }
             hostCheckedAt[job.hostKey] = max(hostCheckedAt[job.hostKey] ?? .distantPast, finishedAt[job.id] ?? checkedAt)
         }
         for key in vaultClosedHosts where hostStates[key] == nil {
@@ -184,7 +188,8 @@ actor UniConnectAccountsReader {
                 key: key, label: label.label, kind: label.kind,
                 state: hostStates[key] ?? .ok,
                 checkedAt: hostCheckedAt[key] ?? checkedAt,
-                error: hostErrors[key]
+                error: hostErrors[key],
+                errorDetail: hostErrorDetails[key]
             )
         }
 
@@ -312,6 +317,23 @@ actor UniConnectAccountsReader {
     /// Why one host's probe failed, as `hosts[].error` of `accounts-v1`.
     struct ProbeFailure: Error {
         let code: String
+        /// One sanitized line of what SSH or the remote shell printed, if any.
+        var detail: String? = nil
+
+        /// The last informative stderr line (no warnings, no prompts), at most 160 characters.
+        static func detail(from standardError: Data) -> String? {
+            let text = String(decoding: standardError.prefix(16_384), as: UTF8.self)
+            let lines = text.split(whereSeparator: \.isNewline)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { line in
+                    !line.isEmpty
+                        && !line.hasPrefix("Warning: Permanently added")
+                        && !line.lowercased().contains("password:")
+                        && !line.hasPrefix("Pseudo-terminal")
+                }
+            guard let last = lines.last else { return nil }
+            return String(last.prefix(160))
+        }
     }
 
     /// Runs the probe for one host and says why it failed (no python3, timeout, SSH, output).
@@ -336,7 +358,7 @@ actor UniConnectAccountsReader {
         case .ssh(let credentialID):
             guard let record = await credentialResolver(credentialID),
                   let session = UniConnectSSH.detectedSession(fromCredentialRecord: record) else {
-                return .failure(ProbeFailure(code: "ssh_fallo"))
+                return .failure(ProbeFailure(code: "ssh_fallo", detail: "UniConnect no encuentra la credencial SSH de esta caja"))
             }
             let remoteCommand = (["python3", "-", "--socket", "default"] + job.mode + sessionArguments)
                 .map(UniConnectSSH.shellQuote)
@@ -345,7 +367,14 @@ actor UniConnectAccountsReader {
                 session: session,
                 remoteCommand: remoteCommand,
                 ambientEnvironment: ambientEnvironment()
-            ) else { return .failure(ProbeFailure(code: "ssh_fallo")) }
+            ) else {
+                return .failure(ProbeFailure(
+                    code: "ssh_fallo",
+                    detail: session.password == nil
+                        ? "UniConnect no pudo preparar la orden ssh de esta caja"
+                        : "UniConnect no pudo preparar la orden ssh con contraseña (¿sshpass?)"
+                ))
+            }
             executable = invocation.executable
             arguments = invocation.arguments
             environment = invocation.environment
@@ -362,17 +391,18 @@ actor UniConnectAccountsReader {
         } catch UniConnectProcessRunnerError.timedOut {
             return .failure(ProbeFailure(code: "sin_respuesta"))
         } catch {
-            return .failure(ProbeFailure(code: "ssh_fallo"))
+            return .failure(ProbeFailure(code: "ssh_fallo", detail: "no se pudo lanzar ssh: \(error)"))
         }
         let stderr = String(decoding: result.standardError.prefix(4_096), as: UTF8.self).lowercased()
+        let detail = ProbeFailure.detail(from: result.standardError)
         if result.terminationStatus == 127
             || (stderr.contains("python3") && (stderr.contains("not found") || stderr.contains("no such file"))) {
-            return .failure(ProbeFailure(code: "sin_python3"))
+            return .failure(ProbeFailure(code: "sin_python3", detail: detail))
         }
-        if result.terminationStatus == 255 { return .failure(ProbeFailure(code: "ssh_fallo")) }
+        if result.terminationStatus == 255 { return .failure(ProbeFailure(code: "ssh_fallo", detail: detail)) }
         guard !result.outputWasTruncated,
               let output = UniConnectAccountsProbeOutput.decode(result.standardOutput) else {
-            return .failure(ProbeFailure(code: "salida_no_valida"))
+            return .failure(ProbeFailure(code: "salida_no_valida", detail: detail ?? "código \(result.terminationStatus)"))
         }
         if let error = output.error { return .failure(ProbeFailure(code: String(error.prefix(40)))) }
         return .success(output)

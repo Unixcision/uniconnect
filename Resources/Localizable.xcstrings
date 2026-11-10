@@ -46483,6 +46483,28 @@
           }
         }
       }
+    },
+    "uniconnect.accounts.filter.agentLabel": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "IA"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.filter.allAgents": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todas las IA"
+          }
+        }
+      }
     }
   }
 }

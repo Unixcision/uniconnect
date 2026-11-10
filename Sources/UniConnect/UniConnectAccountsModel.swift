@@ -48,6 +48,8 @@ final class UniConnectAccountsModel {
     private(set) var isLoading = false
     var tab: Tab = .windows
     var filter: Filter = .all
+    /// Only this provider's windows (`claude`, `codex`, `grok`…); `nil` is every agent.
+    var providerFilter: String?
     var search = ""
     var grouping: Grouping = .workspace
     var showWindowsWithoutAgent = false
@@ -121,10 +123,49 @@ final class UniConnectAccountsModel {
 
     // MARK: - Derived
 
-    /// Windows after «Ventanas sin IA».
-    var baseWindows: [UniConnectAccountsSnapshot.Window] {
+    /// One provider chip: «Claude Code · 44», «Codex · 8»…
+    struct ProviderChip: Identifiable, Equatable {
+        let provider: String?
+        let title: String
+        let count: Int
+        var id: String { provider ?? "*" }
+    }
+
+    /// Windows after «Ventanas sin IA», before the provider filter.
+    private var windowsBeforeProvider: [UniConnectAccountsSnapshot.Window] {
         guard let snapshot else { return [] }
         return showWindowsWithoutAgent ? snapshot.windows : snapshot.windows.filter { !$0.state.isWithoutAgent }
+    }
+
+    /// Windows after «Ventanas sin IA» and the provider filter.
+    var baseWindows: [UniConnectAccountsSnapshot.Window] {
+        guard let providerFilter else { return windowsBeforeProvider }
+        return windowsBeforeProvider.filter { $0.agent?.provider == providerFilter }
+    }
+
+    /// «Todas las IA» and one chip per provider present in this reading (most windows first).
+    var providerChips: [ProviderChip] {
+        var counts: [String: (name: String, count: Int)] = [:]
+        for window in windowsBeforeProvider {
+            guard let agent = window.agent else { continue }
+            counts[agent.provider] = (agent.displayName, (counts[agent.provider]?.count ?? 0) + 1)
+        }
+        let total = counts.values.reduce(0) { $0 + $1.count }
+        let ordered = counts.sorted { left, right in
+            left.value.count != right.value.count ? left.value.count > right.value.count : left.key < right.key
+        }
+        return [ProviderChip(
+            provider: nil,
+            title: String(localized: "uniconnect.accounts.filter.allAgents", defaultValue: "Todas las IA"),
+            count: total
+        )] + ordered.map { ProviderChip(provider: $0.key, title: $0.value.name, count: $0.value.count) }
+    }
+
+    /// Accounts shown in «Uso por cuenta», after the provider filter.
+    var visibleAccounts: [UniConnectAccountsSnapshot.AccountSummary] {
+        let accounts = snapshot?.accounts ?? []
+        guard let providerFilter else { return accounts }
+        return accounts.filter { $0.provider == providerFilter }
     }
 
     /// «Todas», one chip per email (most windows first), «Sin sesión» and «Sin leer».

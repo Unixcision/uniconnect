@@ -187,6 +187,11 @@ Todas las claves están siempre; las que no aplican van `null`. Las fechas van e
     - `salida_no_valida`: ninguna línea de la salida es la de la sonda;
     - `tmux_no_disponible` o `tmux_fallo`: el `error` de la propia sonda.
 
+    `error_detail`: la última línea útil de lo que dijo SSH o el shell (como mucho 160 caracteres,
+    sin avisos ni prompts), o lo que falló en el propio equipo antes de conectar («UniConnect no
+    encuentra la credencial SSH de esta caja», «no pudo preparar la orden ssh con contraseña
+    (¿sshpass?)»…). Va detrás del aviso: «… falló la conexión SSH · Permission denied (password)».
+
     El aviso lo dice con esas palabras: «no contestó a tiempo», «no tiene python3», «falló la
     conexión SSH», «respondió algo que no es la sonda», «no tiene tmux», «tmux dio un error».
   - **La salida se lee por su última línea que sea un objeto JSON.** Un shell remoto que imprime
@@ -243,17 +248,25 @@ Todas las claves están siempre; las que no aplican van `null`. Las fechas van e
 Contenido, de arriba abajo:
 1. **Cabecera.** Título «Cuentas de IA», «Leído en vivo hace N s» y el botón «Actualizar» (con
    un indicador mientras lee).
-2. **Filtros.** Fichas de cuenta: «Todas · N», una por email ordenadas de más a menos ventanas
+2. **Filtro por IA** (pedido el 10-11). Una fila «IA: Todas las IA · 56 · Claude Code 44 ·
+   Codex 8 · Grok 1»: una ficha por cada `agent.provider` que **haya** en esta lectura, con su
+   `display_name` y su número de ventanas, de más a menos. No hay lista fija: si mañana aparece otra IA,
+   sale sola. Solo cuentan las ventanas leídas ahora, de los equipos conectados y autorizados: un host que
+   no contestó no aporta IAs.
+   - Se combina con todo lo demás: elegir «Codex» deja en las fichas de cuenta solo cuentas de Codex,
+     y en «Uso por cuenta» solo esas cuentas.
+   - Al cambiar de IA, la ficha de cuenta vuelve a «Todas».
+3. **Filtros por cuenta.** Fichas de cuenta: «Todas · N», una por email ordenadas de más a menos ventanas
    («dev@notbetting.com · 28», con su color de `paleta.json`), «Sin sesión · N» y «Sin leer · N».
    «Sin leer» cubre `no_legible`, `desconocida`, `host_inaccesible`, `sesion_no_viva` e
    `identidad_ambigua`.
    - Una ficha de email se queda **solo** con las ventanas de esa cuenta.
    - Al lado, un buscador que mira espacio, ventana, email, host y usuario del sistema.
-3. **Agrupar.** «Por espacio» (por defecto) o «Por cuenta», y el interruptor «Ventanas sin IA»,
+4. **Agrupar.** «Por espacio» (por defecto) o «Por cuenta», y el interruptor «Ventanas sin IA»,
    apagado por defecto. Apagado, oculta `sin_ia`, `sin_tmux` y `panel_muerto`.
-4. **Avisos de host.** Uno por host que no sea `ok`: «No se pudo leer root@…: no contestó» o
+5. **Avisos de host.** Uno por host que no sea `ok`: «No se pudo leer root@…: no contestó» o
    «…: la bóveda está cerrada».
-5. **Filas.**
+6. **Filas.**
    - Nombre de la ventana.
    - Insignia del proveedor (Claude Code / Codex / …).
    - Email en grande con su color, o el estado en gris: «Sin sesión», «No legible como root»,
@@ -262,7 +275,7 @@ Contenido, de arriba abajo:
    - Debajo, en pequeño: `os_user · config`, y `host_label` cuando se agrupa por cuenta.
    - Con `method` distinto de `oauth`/`chatgpt`: «Clave de API», «Bedrock», «Vertex» o «Foundry»
      en lugar del email.
-6. **Resumen por cuenta** (solo «Por cuenta»): cabecera con el email, su color, el número de
+7. **Resumen por cuenta** (solo «Por cuenta»): cabecera con el email, su color, el número de
    ventanas y en cuántos hosts está.
 
 ### 4.1 Pestaña «Uso por cuenta»

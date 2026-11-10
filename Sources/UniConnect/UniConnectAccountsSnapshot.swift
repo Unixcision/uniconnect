@@ -69,6 +69,8 @@ struct UniConnectAccountsSnapshot: Equatable, Sendable {
         /// Why it could not be read: `sin_respuesta`, `sin_python3`, `ssh_fallo`, `salida_no_valida`,
         /// `tmux_no_disponible`, `tmux_fallo`; `nil` when it was read.
         var error: String? = nil
+        /// What SSH or the shell said when it failed (one sanitized line), to diagnose it.
+        var errorDetail: String? = nil
         var id: String { key }
     }
 

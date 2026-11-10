@@ -5,6 +5,8 @@ import SwiftUI
 /// chart, rate and projection, plus a «Resumen» grid of every account.
 struct UniConnectAccountsUsageView: View {
     let snapshot: UniConnectAccountsSnapshot?
+    /// The accounts to list, already filtered by provider.
+    let accounts: [UniConnectAccountsSnapshot.AccountSummary]
     @Binding var selectedKey: String?
     /// The Codex account whose reset is being spent, to disable its button.
     let resettingKey: String?
@@ -29,10 +31,6 @@ struct UniConnectAccountsUsageView: View {
                 }
             }
         }
-    }
-
-    private var accounts: [UniConnectAccountsSnapshot.AccountSummary] {
-        snapshot?.accounts ?? []
     }
 
     private var selectedAccount: UniConnectAccountsSnapshot.AccountSummary? {

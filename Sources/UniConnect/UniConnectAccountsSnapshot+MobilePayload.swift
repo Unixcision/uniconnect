@@ -32,7 +32,8 @@ extension UniConnectAccountsSnapshot {
             "checked_at": dates.string(from: checkedAt),
             "hosts": hosts.map {
                 ["host_key": $0.key, "label": $0.label, "kind": $0.kind, "state": $0.state.rawValue,
-                 "checked_at": dates.string(from: $0.checkedAt), "error": value($0.error)] as [String: Any]
+                 "checked_at": dates.string(from: $0.checkedAt), "error": value($0.error),
+                 "error_detail": value($0.errorDetail)] as [String: Any]
             },
             "windows": windows.map { window -> [String: Any] in
                 let agent: Any = window.agent.map {

@@ -8,7 +8,8 @@
       "kind": "local",
       "state": "ok",
       "checked_at": "2026-11-10T12:30:04Z",
-      "error": null
+      "error": null,
+      "error_detail": null
     },
     {
       "host_key": "ssh:root@203.0.113.10:22",
@@ -16,7 +17,8 @@
       "kind": "ssh",
       "state": "ok",
       "checked_at": "2026-11-10T12:30:05Z",
-      "error": null
+      "error": null,
+      "error_detail": null
     },
     {
       "host_key": "ssh:root@178.105.40.42:22",
@@ -24,7 +26,8 @@
       "kind": "ssh",
       "state": "ok",
       "checked_at": "2026-11-10T12:30:05Z",
-      "error": null
+      "error": null,
+      "error_detail": null
     },
     {
       "host_key": "ssh:ec2-user@54.167.34.64:22",
@@ -32,7 +35,8 @@
       "kind": "ssh",
       "state": "host_inaccesible",
       "checked_at": "2026-11-10T12:30:06Z",
-      "error": "sin_respuesta"
+      "error": "ssh_fallo",
+      "error_detail": "ec2-user@54.167.34.64: Permission denied (publickey)."
     },
     {
       "host_key": "ssh:dgomezm@100.123.234.20:22",
@@ -40,7 +44,8 @@
       "kind": "ssh",
       "state": "ok",
       "checked_at": "2026-11-10T12:30:05Z",
-      "error": null
+      "error": null,
+      "error_detail": null
     },
     {
       "host_key": "ssh:root@198.51.100.7:22",
@@ -48,7 +53,8 @@
       "kind": "ssh",
       "state": "boveda_cerrada",
       "checked_at": "2026-11-10T12:30:06Z",
-      "error": null
+      "error": null,
+      "error_detail": null
     }
   ],
   "windows": [

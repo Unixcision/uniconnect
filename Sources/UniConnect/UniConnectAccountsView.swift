@@ -14,8 +14,10 @@ struct UniConnectAccountsView: View {
             case .windows:
                 windowsTab
             case .usage:
+                providerBar
                 UniConnectAccountsUsageView(
                     snapshot: model.snapshot,
+                    accounts: model.visibleAccounts,
                     selectedKey: $model.selectedAccountKey,
                     resettingKey: model.resettingKey,
                     onShowWindows: { email in model.showWindows(ofEmail: email) },
@@ -89,6 +91,7 @@ struct UniConnectAccountsView: View {
 
     private var windowsTab: some View {
         VStack(spacing: 0) {
+            providerBar
             chipsBar
             controls
             ForEach(model.hostWarnings) { host in
@@ -106,6 +109,39 @@ struct UniConnectAccountsView: View {
             } else {
                 windowList
             }
+        }
+    }
+
+    /// «Todas las IA · 56», «Claude Code · 44», «Codex · 8»…: only the agents in this reading.
+    private var providerBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                Text(String(localized: "uniconnect.accounts.filter.agentLabel", defaultValue: "IA"))
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                ForEach(model.providerChips) { chip in
+                    let selected = model.providerFilter == chip.provider
+                    Button {
+                        model.providerFilter = chip.provider
+                        if model.filter != .all { model.filter = .all }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text(verbatim: chip.title).font(.system(size: 12, weight: .semibold))
+                            Text(verbatim: "\(chip.count)")
+                                .font(.system(size: 11, weight: .bold))
+                                .monospacedDigit()
+                                .foregroundStyle(selected ? Color.white.opacity(0.9) : Color.secondary)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 5)
+                        .background(RoundedRectangle(cornerRadius: 7).fill(selected ? Color.primary.opacity(0.75) : Color.secondary.opacity(0.1)))
+                        .foregroundStyle(selected ? Color(nsColor: .windowBackgroundColor) : Color.primary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 10)
         }
     }
 
@@ -183,8 +219,9 @@ struct UniConnectAccountsView: View {
         let format = Self.hostWarningFormat(host)
         return HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-            Text(verbatim: String(format: format, host.label))
+            Text(verbatim: String(format: format, host.label) + (host.errorDetail.map { " · " + $0 } ?? ""))
                 .font(.system(size: 12))
+                .textSelection(.enabled)
             Spacer()
         }
         .padding(.horizontal, 14)
