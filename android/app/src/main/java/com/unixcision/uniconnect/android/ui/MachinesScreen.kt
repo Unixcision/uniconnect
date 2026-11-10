@@ -61,6 +61,7 @@ import com.unixcision.uniconnect.android.R
 import com.unixcision.uniconnect.android.ui.theme.UniTheme
 import com.unixcision.uniconnect.android.domain.RelaunchScope
 import com.unixcision.uniconnect.android.domain.RelaunchVerb
+import com.unixcision.uniconnect.android.domain.NoticeRoute
 import com.unixcision.uniconnect.android.domain.ActivityState
 import com.unixcision.uniconnect.android.domain.BoxOverrides
 import com.unixcision.uniconnect.android.domain.Machine
@@ -72,11 +73,14 @@ import com.unixcision.uniconnect.android.ui.components.PillTone
 import com.unixcision.uniconnect.android.ui.components.StatusPill
 import com.unixcision.uniconnect.android.ui.components.themedTone
 
-private enum class Level { LOADING, LIST, UPLOADS, MACHINE, TERMINAL }
+private enum class Level { LOADING, LIST, UPLOADS, ACCOUNTS, MACHINE, TERMINAL }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachments: AttachViewModel, inbox: InboxViewModel, dictation: DictationViewModel, onEnableNotifications: (String) -> Unit, dictationHistory: DictationHistoryViewModel? = null) {
+fun MachinesScreen(
+    model: MachinesViewModel, uploads: UploadViewModel, attachments: AttachViewModel, inbox: InboxViewModel, dictation: DictationViewModel,
+    onEnableNotifications: (String) -> Unit, dictationHistory: DictationHistoryViewModel? = null, accounts: AccountsViewModel? = null,
+) {
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { model.pauseLiveConnection() }
     LifecycleEventEffect(Lifecycle.Event.ON_START) { model.resumeLiveConnection() }
     val state by model.state.collectAsStateWithLifecycle()
@@ -98,12 +102,26 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
     var removing by remember { mutableStateOf<Machine?>(null) }
     // "Enviar archivos" is a section of the home, not of a machine: opening a machine leaves it.
     var sendingFiles by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(machine?.id) { if (machine != null) sendingFiles = false }
-    BackHandler(enabled = machine != null || sendingFiles) { if (machine != null) model.back() else sendingFiles = false }
+    // «Cuentas de IA» is a full screen of the home too; opening a machine leaves it.
+    var accountsOpen by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(machine?.id) { if (machine != null) { sendingFiles = false; accountsOpen = false } }
+    BackHandler(enabled = machine != null || sendingFiles || accountsOpen) {
+        when {
+            machine != null -> model.back()
+            accountsOpen -> accountsOpen = false
+            else -> sendingFiles = false
+        }
+    }
+    // Only machines that announce accounts.v1 are asked: an older one would answer method_not_found.
+    val accountMachines = remember(state.machines, state.connections) {
+        state.machines.filter { state.connections[it.id]?.snapshot?.listsAccounts == true }
+    }
+    val showsAccounts = accounts != null && accountMachines.isNotEmpty()
     val level = when {
         state.loading -> Level.LOADING
         window != null -> Level.TERMINAL
         machine != null -> Level.MACHINE
+        accountsOpen && accounts != null -> Level.ACCOUNTS
         sendingFiles -> Level.UPLOADS
         else -> Level.LIST
     }
@@ -146,6 +164,7 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
             DesignedDrawer(DrawerModel(
                 HomeSummary.total(summaries.values.toList()), version, troubled, state.settings.designTheme,
                 relaunchesEverywhere = reachable.any { it.relaunches }, updatesEverywhere = reachable.any { it.updatesClaude },
+                showsAccounts = showsAccounts,
             )) { destination ->
                 scope.launch { drawer.close() }
                 when (destination) {
@@ -156,6 +175,7 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
                     is HomeDestination.Settings -> settingsPage = destination.page
                     HomeDestination.Diagnostics -> model.showDiagnostics(true)
                     is HomeDestination.Everywhere -> model.relaunchEverywhere(destination.verb)
+                    HomeDestination.Accounts -> { sendingFiles = false; accountsOpen = true }
                 }
             }
         },
@@ -198,6 +218,13 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
                 when (target) {
                     Level.LOADING -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { LoadingIndicator(color = UniTheme.colors.accent) }
                     Level.UPLOADS -> UploadScreen(uploads)
+                    Level.ACCOUNTS -> if (accounts != null) AccountsScreen(
+                        accounts, accountMachines, onBack = { accountsOpen = false },
+                        onOpenWindow = { machineID, workspaceID, windowID ->
+                            accountsOpen = false
+                            model.openNotice(NoticeRoute(machineID, workspaceID, windowID))
+                        },
+                    )
                     Level.TERMINAL -> key(machine?.id, workspace?.id, window?.id) {
                         TerminalScreen(
                             snapshot = state.terminal, loading = state.terminalLoading, error = state.terminalError, errorDetail = state.terminalErrorDetail,
@@ -365,6 +392,10 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
             state.settings, transcribers, dictation, model::updateSettings,
             onDismiss = { settingsPage = null; model.dismissSettings() },
             inbox = inbox, inboxCandidates = inboxCandidates, dictationHistory = dictationHistory, page = settingsPage,
+            // From the home only: inside a machine there is no full screen to open it over.
+            onOpenAccounts = if (showsAccounts && machine == null) {
+                { settingsPage = null; model.dismissSettings(); sendingFiles = false; accountsOpen = true }
+            } else null,
         )
     }
     if (historyOpen && dictationHistory != null) {

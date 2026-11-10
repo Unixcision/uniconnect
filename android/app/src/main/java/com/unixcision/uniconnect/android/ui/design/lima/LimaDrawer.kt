@@ -24,6 +24,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.Computer
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.ManageAccounts
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.Upgrade
@@ -106,6 +107,7 @@ fun LimaDrawer(model: DrawerModel, onGo: (HomeDestination) -> Unit) {
                 LimaDrawerEntry(Icons.Rounded.History, stringResource(R.string.history_title), note = stringResource(R.string.home_shortcut_history)) {
                     onGo(HomeDestination.History)
                 }
+                if (model.showsAccounts) LimaDrawerEntry(Icons.Rounded.ManageAccounts, stringResource(R.string.accounts_title)) { onGo(HomeDestination.Accounts) }
             }
             LimaDrawerGroup(stringResource(R.string.drawer_notices)) {
                 LimaDrawerEntry(Icons.Rounded.NotificationsActive, stringResource(R.string.notices_title)) { onGo(HomeDestination.Notices) }

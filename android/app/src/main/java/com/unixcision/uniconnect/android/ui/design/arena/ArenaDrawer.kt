@@ -25,6 +25,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DesktopMac
 import androidx.compose.material.icons.rounded.FileUpload
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.ManageAccounts
 import androidx.compose.material.icons.rounded.NotificationsNone
 import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.Upgrade
@@ -79,6 +80,7 @@ fun ArenaDrawer(model: DrawerModel, onGo: (HomeDestination) -> Unit) {
                 Entry(Icons.Rounded.History, stringResource(R.string.history_title), note = stringResource(R.string.home_shortcut_history)) {
                     onGo(HomeDestination.History)
                 }
+                if (model.showsAccounts) Entry(Icons.Rounded.ManageAccounts, stringResource(R.string.accounts_title)) { onGo(HomeDestination.Accounts) }
 
                 Group(stringResource(R.string.drawer_notices))
                 Entry(Icons.Rounded.NotificationsNone, stringResource(R.string.notices_title)) { onGo(HomeDestination.Notices) }

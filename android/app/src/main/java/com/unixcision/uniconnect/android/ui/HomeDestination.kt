@@ -11,6 +11,9 @@ sealed interface HomeDestination {
     data class Settings(val page: SettingsPage) : HomeDestination
     data object Diagnostics : HomeDestination
 
+    /** «Cuentas de IA» a pantalla completa (`accounts.v1`). */
+    data object Accounts : HomeDestination
+
     /** «Relanzar» o «Actualizar Claude» en todos los equipos conectados que lo anuncian, en un solo diálogo. */
     data class Everywhere(val verb: RelaunchVerb) : HomeDestination
 }

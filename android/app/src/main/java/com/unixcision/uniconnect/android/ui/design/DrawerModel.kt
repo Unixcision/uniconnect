@@ -17,4 +17,6 @@ data class DrawerModel(
     val relaunchesEverywhere: Boolean = false,
     /** Some connected machine updates Claude: «Actualizar Claude en todos los equipos» is offered. */
     val updatesEverywhere: Boolean = false,
+    /** Some machine tells which account each AI uses: «Cuentas de IA» is offered. */
+    val showsAccounts: Boolean = false,
 )

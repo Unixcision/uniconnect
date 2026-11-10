@@ -141,6 +141,15 @@ data class MachineSnapshot(val serverName: String, val workspaces: List<RemoteWo
      */
     val listsRecentPrompts: Boolean get() = RECENT_PROMPTS in capabilities
 
+    /**
+     * Whether this machine tells, read live, which account each of its AIs is using
+     * (`mobile.accounts.list`, `accounts.v1`).
+     *
+     * Without it «Cuentas de IA» leaves this machine out: an older host would answer
+     * `method_not_found`.
+     */
+    val listsAccounts: Boolean get() = ACCOUNTS in capabilities
+
     companion object {
         /** The host implements mobile.workspace.update and mobile.terminal.update. */
         const val BOX_UPDATE = "box_update"
@@ -179,5 +188,8 @@ data class MachineSnapshot(val serverName: String, val workspaces: List<RemoteWo
 
         /** Every window in the list carries `last_prompt_at` (recent-prompts.v1). */
         const val RECENT_PROMPTS = "recent_prompts"
+
+        /** The host implements mobile.accounts.list (accounts.v1). */
+        const val ACCOUNTS = "accounts.v1"
     }
 }

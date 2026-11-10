@@ -1,0 +1,242 @@
+package com.unixcision.uniconnect.android.data
+
+import com.unixcision.uniconnect.android.domain.AccountChip
+import com.unixcision.uniconnect.android.domain.AccountChipCount
+import com.unixcision.uniconnect.android.domain.AccountGroup
+import com.unixcision.uniconnect.android.domain.AccountHost
+import com.unixcision.uniconnect.android.domain.AccountLabel
+import com.unixcision.uniconnect.android.domain.AccountMethod
+import com.unixcision.uniconnect.android.domain.AccountNotice
+import com.unixcision.uniconnect.android.domain.AccountPalette
+import com.unixcision.uniconnect.android.domain.AccountStatus
+import com.unixcision.uniconnect.android.domain.AccountWindowState
+import com.unixcision.uniconnect.android.domain.AccountsBoard
+import com.unixcision.uniconnect.android.domain.AccountsFailure
+import com.unixcision.uniconnect.android.domain.AccountsQuery
+import com.unixcision.uniconnect.android.domain.AccountsReport
+import com.unixcision.uniconnect.android.domain.MachineAccounts
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import org.json.JSONObject
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import java.time.Instant
+
+/**
+ * «Cuentas de IA» por el decodificador real contra `contracts/accounts-v1/accounts-response.json`, y
+ * los filtros y la agrupación del §4 sobre esa misma respuesta: lo que de verdad llega del equipo.
+ */
+class AccountsContractTest {
+    private val client = NativeMachineClient(FramedRpcClient(CoroutineScope(Dispatchers.Unconfined)))
+
+    private fun fixture(name: String): JSONObject = JSONObject(
+        requireNotNull(javaClass.classLoader?.getResourceAsStream("accounts-v1/$name"))
+            { "falta el fixture del contrato: contracts/accounts-v1/$name" }
+            .bufferedReader().readText()
+    )
+
+    private val report: AccountsReport by lazy { client.decodeAccounts(fixture("accounts-response.json")) }
+    private val board: AccountsBoard by lazy { AccountsBoard(listOf(MachineAccounts("mac", "Mac", report))) }
+
+    private fun window(name: String) = board.rows.single { it.window.window == name }
+
+    @Test fun `la respuesta del contrato se lee entera`() {
+        assertEquals(1, report.version)
+        assertEquals("2026-11-10T12:30:06Z", report.checkedAt)
+        assertEquals(6, report.hosts.size)
+        assertEquals(12, report.windows.size)
+        assertEquals(
+            listOf(AccountHost.OK, AccountHost.OK, AccountHost.OK, AccountHost.UNREACHABLE, AccountHost.OK, AccountHost.VAULT_LOCKED),
+            report.hosts.map { it.state },
+        )
+
+        val uniconnect = report.windows.first()
+        assertEquals("11111111-1111-4111-8111-111111111111", uniconnect.workspaceID)
+        assertEquals("PROYECTOS", uniconnect.workspace)
+        assertEquals("a1111111-1111-4111-8111-111111111111", uniconnect.terminalID)
+        assertEquals("local", uniconnect.hostKey)
+        assertEquals(AccountWindowState.OK, uniconnect.state)
+        assertEquals("Claude Code", uniconnect.agent?.displayName)
+        assertEquals(false, uniconnect.agent?.asRoot)
+        assertEquals("dev@notbetting.com", uniconnect.account?.email)
+        assertEquals("oauth", uniconnect.account?.method)
+        assertEquals("Ultra", uniconnect.account?.plan)
+        assertEquals("/Users/danielgomezmartin/.claude.json", uniconnect.account?.config)
+        assertEquals("2026-11-10T12:30:04Z", uniconnect.account?.readAt)
+    }
+
+    @Test fun `un null del contrato es nulo, nunca el texto null`() {
+        val impuestos = report.windows[1]
+        assertNull(impuestos.account?.organization)
+        val antigua = report.windows.single { it.window == "antigua" }
+        assertNull(antigua.tmuxSession)
+        assertNull(antigua.agent)
+        assertNull(antigua.account)
+        val agy = report.windows.single { it.window == "agy" }
+        assertNull(agy.account?.config)
+        assertNull(agy.account?.email)
+    }
+
+    @Test fun `cada estado del contrato se entiende`() {
+        assertEquals(
+            setOf("ok", "sin_ia", "sesion_no_viva", "sin_sesion", "host_inaccesible", "no_legible", "desconocida", "sin_tmux"),
+            report.windows.map { it.stateWire }.toSet(),
+        )
+        assertTrue(report.windows.all { it.state != null })
+    }
+
+    @Test fun `las fichas cuentan lo visible, cuentas de mas a menos y luego sin sesion y sin leer`() {
+        // Con «Ventanas sin IA» apagado se ocultan `zsh` (sin_ia) y `antigua` (sin_tmux).
+        assertEquals(
+            listOf(
+                AccountChipCount(AccountChip.All, 10),
+                AccountChipCount(AccountChip.Email("dev@notbetting.com"), 2, 3),
+                AccountChipCount(AccountChip.Email("it@iberiavo.com"), 1, 2),
+                AccountChipCount(AccountChip.Email("subs@iberiavo.com"), 1, 4),
+                AccountChipCount(AccountChip.NoSession, 1),
+                // vieja, iberiavochatbot, claudefix (root), agy y api.
+                AccountChipCount(AccountChip.Unread, 5),
+            ),
+            board.chips(AccountsQuery()),
+        )
+        assertEquals(AccountChipCount(AccountChip.All, 12), board.chips(AccountsQuery(showWithoutAgent = true)).first())
+    }
+
+    @Test fun `una ficha de cuenta se queda solo con sus ventanas`() {
+        val dev = board.filtered(AccountsQuery(chip = AccountChip.Email("dev@notbetting.com")))
+        assertEquals(listOf("uniconnect", "APP 2"), dev.map { it.window.window })
+        val sinLeer = board.filtered(AccountsQuery(chip = AccountChip.Unread))
+        assertEquals(listOf("vieja", "iberiavochatbot", "claudefix (root)", "agy", "api"), sinLeer.map { it.window.window })
+        assertEquals(listOf("bot noleakos"), board.filtered(AccountsQuery(chip = AccountChip.NoSession)).map { it.window.window })
+    }
+
+    @Test fun `el buscador mira espacio, ventana, email, host y usuario`() {
+        assertEquals(
+            listOf("impuestos", "codex-antiresell", "iberiavochatbot"),
+            board.filtered(AccountsQuery(search = "IBERIAVO")).map { it.window.window },
+        )
+        // Cada palabra tiene que estar: el espacio MINIPC y el usuario root.
+        assertEquals(listOf("claudefix (root)"), board.filtered(AccountsQuery(search = " minipc  root ")).map { it.window.window })
+        assertEquals(listOf("api"), board.filtered(AccountsQuery(search = "198.51.100.7")).map { it.window.window })
+        assertEquals(10, board.filtered(AccountsQuery(search = "   ")).size)
+    }
+
+    @Test fun `por espacio, en el orden de la barra lateral`() {
+        val groups = board.groups(AccountsQuery())
+        assertEquals(
+            listOf("PROYECTOS", "NOTBETTING", "NOLEAKOS", "IBERIAVO-PREPRO", "MINIPC", "CLIENTE"),
+            groups.map { (it.key as AccountGroup.Key.Workspace).name },
+        )
+        assertEquals(listOf("uniconnect", "impuestos"), groups.first().rows.map { it.window.window })
+        // Con el interruptor encendido vuelven las ventanas sin IA, en su sitio.
+        val all = board.groups(AccountsQuery(showWithoutAgent = true))
+        assertEquals(listOf("uniconnect", "impuestos", "zsh"), all.first().rows.map { it.window.window })
+    }
+
+    @Test fun `por cuenta, primero las cuentas y luego lo que no tiene`() {
+        val groups = board.groups(AccountsQuery(grouping = AccountsQuery.Grouping.BY_ACCOUNT))
+        assertEquals(
+            listOf(
+                AccountGroup.Key.Email("dev@notbetting.com", 3), AccountGroup.Key.Email("it@iberiavo.com", 2),
+                AccountGroup.Key.Email("subs@iberiavo.com", 4), AccountGroup.Key.NoSession, AccountGroup.Key.Unread,
+            ),
+            groups.map { it.key },
+        )
+        // dev@notbetting.com está en dos hosts: este Mac y root@203.0.113.10.
+        assertEquals(2, groups.first().rows.size)
+        assertEquals(2, groups.first().hostCount)
+        val withoutAgent = board.groups(AccountsQuery(grouping = AccountsQuery.Grouping.BY_ACCOUNT, showWithoutAgent = true))
+        assertEquals(AccountGroup.Key.WithoutAgent, withoutAgent.last().key)
+        assertEquals(listOf("zsh", "antigua"), withoutAgent.last().rows.map { it.window.window })
+    }
+
+    @Test fun `cada fila dice su cuenta, o por que no la tiene`() {
+        assertEquals(AccountLabel.Email("dev@notbetting.com", 3), window("uniconnect").label)
+        assertEquals(AccountLabel.Status(AccountStatus.NOT_READABLE, "root"), window("claudefix (root)").label)
+        assertEquals(AccountLabel.Status(AccountStatus.NOT_EXPOSED, "dgomezm"), window("agy").label)
+        assertEquals(AccountLabel.Status(AccountStatus.HOST_UNREACHABLE), window("iberiavochatbot").label)
+        assertEquals(AccountLabel.Status(AccountStatus.SESSION_NOT_ALIVE), window("vieja").label)
+        assertEquals(AccountLabel.Status(AccountStatus.NO_SESSION, "noleakos"), window("bot noleakos").label)
+        assertEquals(AccountLabel.Status(AccountStatus.NO_AGENT), window("zsh").label)
+        assertEquals(AccountLabel.Status(AccountStatus.NO_TMUX), window("antigua").label)
+        // El nombre del equipo va delante del host.
+        assertEquals("Mac · root@203.0.113.10:22", window("APP 2").hostLabel)
+        assertEquals("Mac · Este Mac", window("uniconnect").hostLabel)
+    }
+
+    @Test fun `con clave de API se ensenya el metodo, no un email`() {
+        val result = fixture("accounts-response.json").apply {
+            getJSONArray("windows").getJSONObject(0).getJSONObject("account").put("method", "api_key").put("email", JSONObject.NULL)
+        }
+        val row = AccountsBoard(listOf(MachineAccounts("mac", "Mac", client.decodeAccounts(result)))).rows.first()
+        assertEquals(AccountLabel.Method(AccountMethod.API_KEY), row.label)
+        assertNull(row.email)
+    }
+
+    @Test fun `un email solo cuenta si se leyo en esta llamada`() {
+        // Un equipo que mandara un email junto a un estado que no es ok no lo convierte en la cuenta.
+        val result = fixture("accounts-response.json").apply {
+            getJSONArray("windows").getJSONObject(6).getJSONObject("account").put("email", "vieja@ejemplo.com")
+        }
+        val row = AccountsBoard(listOf(MachineAccounts("mac", "Mac", client.decodeAccounts(result)))).rows[6]
+        assertEquals(AccountWindowState.NO_SESSION, row.state)
+        assertNull(row.email)
+        assertFalse(row.matches(AccountChip.Email("vieja@ejemplo.com")))
+    }
+
+    @Test fun `un estado nuevo del contrato va a sin leer y se ensenya tal cual`() {
+        val result = fixture("accounts-response.json").apply {
+            getJSONArray("windows").getJSONObject(0).put("state", "algo_del_futuro")
+        }
+        val row = AccountsBoard(listOf(MachineAccounts("mac", "Mac", client.decodeAccounts(result)))).rows.first()
+        assertNull(row.state)
+        assertTrue(row.unread)
+        assertNull(row.email)
+        assertEquals(AccountLabel.Unknown("algo_del_futuro"), row.label)
+    }
+
+    @Test fun `avisos por cada host que no se pudo leer y por cada equipo que no contesto`() {
+        assertEquals(
+            listOf(
+                AccountNotice.HostUnreadable("Mac · ec2-user@54.167.34.64:22", AccountHost.UNREACHABLE),
+                AccountNotice.HostUnreadable("Mac · root@198.51.100.7:22", AccountHost.VAULT_LOCKED),
+            ),
+            board.notices,
+        )
+        val failed = AccountsFailure(AccountsFailure.Kind.UNREACHABLE)
+        val two = AccountsBoard(listOf(MachineAccounts("mac", "Mac", report), MachineAccounts("minipc", "MINIPC", null, failed)))
+        assertEquals(AccountNotice.MachineFailed("MINIPC", failed), two.notices.first())
+        // El equipo que no contestó no aporta ninguna fila.
+        assertTrue(two.rows.none { it.machineID == "minipc" })
+        assertEquals(board.rows.size, two.rows.size)
+    }
+
+    @Test fun `leido hace N s cuenta desde la respuesta y nunca en negativo`() {
+        val checked = Instant.parse("2026-11-10T12:30:06Z").toEpochMilli()
+        assertEquals(checked, board.checkedAtMillis)
+        assertEquals(9L, board.ageSeconds(checked + 9_400))
+        assertEquals(0L, board.ageSeconds(checked - 5_000))
+        assertNull(AccountsBoard(emptyList()).ageSeconds(checked))
+    }
+
+    @Test fun `el color de una cuenta es el de la paleta del contrato`() {
+        val palette = fixture("paleta.json")
+        val colors = palette.getJSONArray("colores")
+        assertEquals(colors.length(), AccountPalette.COLORS.size)
+        for (index in 0 until colors.length()) {
+            assertEquals(colors.getString(index), hex(AccountPalette.COLORS[index]))
+        }
+        assertEquals(palette.getString("neutro"), hex(AccountPalette.NEUTRAL))
+        val examples = palette.getJSONObject("ejemplos")
+        for (email in examples.keys()) {
+            assertEquals(email, examples.getInt(email), AccountPalette.indexOf(email))
+        }
+        assertEquals(AccountPalette.NEUTRAL, AccountPalette.colorOf(null))
+        assertEquals(AccountPalette.COLORS[3], AccountPalette.colorOf("Dev@NotBetting.com"))
+    }
+
+    private fun hex(argb: Long): String = "#%06X".format(argb and 0xFFFFFF)
+}

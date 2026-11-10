@@ -46,13 +46,27 @@ class RelaunchOfferTest {
         }
     }
 
-    @Test fun `el Mac no ofrece relanzar una ventana SSH ni sabiendo su IA ni sin saberla`() {
+    @Test fun `el Mac relanza Claude tambien por SSH, pero no Codex`() {
+        // Desde el 10-11 el Mac relanza las ventanas SSH con el trabajador de Linux (fila macos).
         val mac = snapshot(matrix.getJSONObject("capacidades").getJSONArray("macos").strings())
-        assertFalse(mac.relaunchesWindow(isSSH = true, provider = "claude"))
-        assertFalse(mac.relaunchesWindow(isSSH = true, provider = null))
-        // En local, sin saber qué IA corre, se ofrece: hay alguna de ese tipo y el plan decide.
+        assertTrue(mac.relaunchesWindow(isSSH = true, provider = "claude"))
+        assertFalse(mac.relaunchesWindow(isSSH = true, provider = "codex"))
+        // Sin saber qué IA corre, se ofrece: hay alguna de ese tipo y el plan decide.
+        assertTrue(mac.relaunchesWindow(isSSH = true, provider = null))
         assertTrue(mac.relaunchesWindow(isSSH = false, provider = null))
         assertFalse(mac.relaunchesWindow(isSSH = false, provider = "gemini"))
+    }
+
+    @Test fun `actualizar Claude se ofrece en cada tipo de ventana que anuncia la fila del equipo`() {
+        val capacidades = matrix.getJSONObject("capacidades")
+        for (equipo in capacidades.keys()) {
+            val host = snapshot(capacidades.getJSONArray(equipo).strings())
+            for ((tipo, isSSH) in listOf("local" to false, "ssh" to true)) {
+                val anunciado = "relaunch.v1.update.claude.$tipo" in host.capabilities
+                assertEquals("$equipo $tipo", anunciado, host.updatesClaudeWindow(isSSH, "claude"))
+                assertFalse("$equipo $tipo codex", host.updatesClaudeWindow(isSSH, "codex"))
+            }
+        }
     }
 
     @Test fun `un equipo anterior a D7 lo ofrece como siempre y deja que el plan excluya`() {

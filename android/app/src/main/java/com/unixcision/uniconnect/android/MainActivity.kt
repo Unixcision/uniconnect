@@ -24,6 +24,7 @@ import com.unixcision.uniconnect.android.notifications.AndroidNoticePublisher
 import com.unixcision.uniconnect.android.notifications.NoticeCounters
 import java.util.UUID
 import com.unixcision.uniconnect.android.ui.AttachViewModel
+import com.unixcision.uniconnect.android.ui.AccountsViewModel
 import com.unixcision.uniconnect.android.ui.InboxViewModel
 import com.unixcision.uniconnect.android.ui.DictationViewModel
 import com.unixcision.uniconnect.android.ui.DictationHistoryViewModel
@@ -59,6 +60,7 @@ class MainActivity : ComponentActivity() {
                     InboxViewModel::class.java -> InboxViewModel(container.inboxClient, container.inboxPreviews)
                     DictationViewModel::class.java -> DictationViewModel(container.dictation, container.hostDictation, container.localDictation, container.speechModels)
                     DictationHistoryViewModel::class.java -> DictationHistoryViewModel(container.dictationHistory, container.hostTranscription, container.machines, container.sentMessages, container.phoneTranscriber)
+                    AccountsViewModel::class.java -> AccountsViewModel({ machine -> container.machineClient.accounts(machine) })
                     else -> throw IllegalArgumentException("unknown model ${modelClass.name}")
                 } as T
             }
@@ -69,6 +71,7 @@ class MainActivity : ComponentActivity() {
         val dictation = ViewModelProvider(this, factory)[DictationViewModel::class.java]
         val inbox = ViewModelProvider(this, factory)[InboxViewModel::class.java]
         val dictationHistory = ViewModelProvider(this, factory)[DictationHistoryViewModel::class.java]
+        val accounts = ViewModelProvider(this, factory)[AccountsViewModel::class.java]
         handleNotice(intent)
         setContent {
             // The theme wraps the whole app and follows the stored preference as it changes, so a
@@ -77,7 +80,7 @@ class MainActivity : ComponentActivity() {
             UniTheme(state.settings.designTheme, state.settings.colorMode) {
                 val dark = UniTheme.colors.isDark
                 LaunchedEffect(dark) { applySystemBars(dark) }
-                MachinesScreen(model, uploads, attachments, inbox, dictation, ::requestNotifications, dictationHistory)
+                MachinesScreen(model, uploads, attachments, inbox, dictation, ::requestNotifications, dictationHistory, accounts)
             }
         }
     }

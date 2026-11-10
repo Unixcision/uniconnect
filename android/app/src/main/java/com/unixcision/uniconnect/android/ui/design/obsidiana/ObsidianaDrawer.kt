@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Computer
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.ManageAccounts
 import androidx.compose.material.icons.rounded.MonitorHeart
 import androidx.compose.material.icons.rounded.NotificationsNone
 import androidx.compose.material.icons.rounded.RestartAlt
@@ -110,6 +111,7 @@ fun ObsidianaDrawer(model: DrawerModel, onGo: (HomeDestination) -> Unit) {
                 }
                 Entry(Icons.Rounded.Upload, stringResource(R.string.upload_title), onClick = { onGo(HomeDestination.Files) })
                 Entry(Icons.Rounded.History, stringResource(R.string.history_title), note = stringResource(R.string.home_shortcut_history), onClick = { onGo(HomeDestination.History) })
+                if (model.showsAccounts) Entry(Icons.Rounded.ManageAccounts, stringResource(R.string.accounts_title), onClick = { onGo(HomeDestination.Accounts) })
 
                 Group(stringResource(R.string.drawer_notices))
                 Entry(Icons.Rounded.NotificationsNone, stringResource(R.string.notices_title), onClick = { onGo(HomeDestination.Notices) }) {

@@ -201,6 +201,70 @@ class NativeMachineClient(
         return details
     }
 
+    override suspend fun accounts(machine: Machine): AccountsReport {
+        // `{}`: todas las ventanas de todos los espacios. El equipo tarda como mucho 12 s con todas
+        // sus sondas en paralelo; 15 s deja margen a la red sin esperar para siempre.
+        val result = call(machine, "mobile.accounts.list", JSONObject(), ACCOUNTS_DEADLINE_MILLIS)
+        return try {
+            decodeAccounts(result)
+        } catch (malformed: org.json.JSONException) {
+            throw MachineFailure.ProtocolMismatch()
+        }
+    }
+
+    /**
+     * Lee una respuesta de `accounts.v1`.
+     *
+     * Los `null` del contrato se miran con `isNull`, como en los Detalles: un `null` de JSON leído
+     * con `optString` es el texto «null», y una cuenta llamada así es peor que ninguna.
+     */
+    internal fun decodeAccounts(result: JSONObject): AccountsReport {
+        val hosts = result.optJSONArray("hosts") ?: JSONArray()
+        val windows = result.optJSONArray("windows") ?: JSONArray()
+        return AccountsReport(
+            version = result.optInt("version", 1),
+            checkedAt = result.text("checked_at"),
+            hosts = List(hosts.length()) { index ->
+                val host = hosts.getJSONObject(index)
+                AccountHost(
+                    hostKey = host.getString("host_key"),
+                    label = host.text("label").orEmpty(),
+                    kind = host.text("kind") ?: "local",
+                    state = host.text("state") ?: AccountHost.UNREACHABLE,
+                    checkedAt = host.text("checked_at"),
+                )
+            },
+            windows = List(windows.length()) { index ->
+                val window = windows.getJSONObject(index)
+                AccountWindow(
+                    workspaceID = window.getString("workspace_id"),
+                    workspace = window.text("workspace").orEmpty(),
+                    terminalID = window.getString("terminal_id"),
+                    window = window.text("window").orEmpty(),
+                    hostKey = window.text("host_key") ?: "local",
+                    tmuxSession = window.text("tmux_session"),
+                    // Sin estado no se da por leída: se cuenta como «sin leer».
+                    stateWire = window.text("state") ?: "",
+                    agent = window.optJSONObject("agent")?.let { agent ->
+                        val provider = agent.text("provider").orEmpty()
+                        AccountAgent(provider, agent.text("display_name") ?: provider, agent.flag("as_root"))
+                    },
+                    account = window.optJSONObject("account")?.let { account ->
+                        AccountInfo(
+                            email = account.text("email"),
+                            method = account.text("method"),
+                            plan = account.text("plan"),
+                            organization = account.text("organization"),
+                            osUser = account.text("os_user"),
+                            config = account.text("config"),
+                            readAt = account.text("read_at"),
+                        )
+                    },
+                )
+            },
+        )
+    }
+
     /**
      * Lee una respuesta de `window_details.v1`.
      *
@@ -618,5 +682,7 @@ class NativeMachineClient(
         const val MAX_INPUT_BYTES = 256 * 1024
         /** How long a creation may take before the phone stops waiting for the answer. */
         const val CREATE_DEADLINE_MILLIS = 45_000L
+        /** How long «Cuentas de IA» waits for one machine: its probes take up to 12 s (accounts.v1). */
+        const val ACCOUNTS_DEADLINE_MILLIS = 15_000L
     }
 }
