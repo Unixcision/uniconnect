@@ -46484,6 +46484,17 @@
         }
       }
     },
+    "uniconnect.windowDetails.source.threads": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tabla de conversaciones de Codex"
+          }
+        }
+      }
+    },
     "uniconnect.accounts.filter.agentLabel": {
       "extractionState": "manual",
       "localizations": {

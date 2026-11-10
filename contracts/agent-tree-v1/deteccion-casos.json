@@ -405,6 +405,134 @@
       "cwds": {"1100": "/Users/danielgomezmartin/Desktop/PROYECTOS/MULTIGRAM"},
       "pane_current_path": "/Users/danielgomezmartin/Desktop/PROYECTOS/MULTIGRAM",
       "espera": {"provider": "claude", "session_id": "714b0eae-b568-4e0c-a70b-c87c0d0a801a", "cwd": "/Users/danielgomezmartin/Desktop/PROYECTOS/MULTIGRAM", "as_root": false, "source": "ficha"}
+    },
+    {
+      "nombre": "codex_0167_sin_rollout_da_threads",
+      "descripcion": "Codex 0.167 (npm) ya no tiene el rollout abierto: el estado va a state_5.sqlite. Un codex lanzado a mano, sin resume, se identifica por su tabla threads: el hilo de codex-tui de su carpeta creado tras arrancar (con 5 s de margen), el que cambió más tarde. No cuentan el hilo anterior al arranque, el de un subagente, el archivado, el del Codex de escritorio ni el de otra carpeta.",
+      "pane_pid": 1000,
+      "home": "/Users/danielgomezmartin",
+      "procesos": [
+        {"pid": 1000, "ppid": 1, "uid": 501, "argv": ["-zsh"], "inicio_ms": 1794099400000},
+        {"pid": 1100, "ppid": 1000, "uid": 501, "argv": ["node", "/usr/local/lib/node_modules/@openai/codex/bin/codex.js", "--yolo"], "inicio_ms": 1794100000000},
+        {"pid": 1200, "ppid": 1100, "uid": 501, "argv": ["/usr/local/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/codex/codex", "--yolo"], "inicio_ms": 1794100000300}
+      ],
+      "fichas": {},
+      "abiertos": {"1200": ["/Users/danielgomezmartin/.codex/logs_2.sqlite", "/Users/danielgomezmartin/.codex/tmp/arg0/codex-arg0Xq1/.lock"]},
+      "rollouts": {},
+      "cwds": {"1100": "/Users/danielgomezmartin", "1200": "/Users/danielgomezmartin"},
+      "pane_current_path": "/Users/danielgomezmartin",
+      "hilos": [
+        {"id": "01a19811-f606-7df3-b545-27e81fafca0c", "cwd": "/Users/danielgomezmartin", "created_at_ms": 1793552676381, "updated_at_ms": 1794100500000, "originator": "codex-tui", "archived": 0, "thread_source": "user"},
+        {"id": "01a1d2e4-5b6c-7d8e-9f01-2a3b4c5d6e7f", "cwd": "/Users/danielgomezmartin", "created_at_ms": 1794100004000, "updated_at_ms": 1794100060000, "originator": "codex-tui", "archived": 0, "thread_source": "user"},
+        {"id": "01a1d2e5-0000-7000-8000-00000000c0c0", "cwd": "/Users/danielgomezmartin", "created_at_ms": 1794100030000, "updated_at_ms": 1794100090000, "originator": "codex-tui", "archived": 0, "thread_source": "subagent"},
+        {"id": "01a1d2e6-0000-7000-8000-00000000d0d0", "cwd": "/Users/danielgomezmartin", "created_at_ms": 1794100010000, "updated_at_ms": 1794100100000, "originator": "codex-tui", "archived": 1, "thread_source": "user"},
+        {"id": "01a1d2e7-0000-7000-8000-00000000e0e0", "cwd": "/Users/danielgomezmartin", "created_at_ms": 1794100020000, "updated_at_ms": 1794100120000, "originator": "Codex Desktop", "archived": 0, "thread_source": "user"},
+        {"id": "01a1d2e8-0000-7000-8000-00000000f0f0", "cwd": "/Users/danielgomezmartin/Developer", "created_at_ms": 1794100005000, "updated_at_ms": 1794100200000, "originator": "codex-tui", "archived": 0, "thread_source": "user"}
+      ],
+      "espera": {"provider": "codex", "session_id": "01a1d2e4-5b6c-7d8e-9f01-2a3b4c5d6e7f", "cwd": "/Users/danielgomezmartin", "as_root": false, "source": "threads"}
+    },
+    {
+      "nombre": "codex_0167_tras_new_da_el_hilo_nuevo",
+      "descripcion": "Dentro del TUI se hizo /new: hay dos hilos creados tras arrancar y vale el que cambió más tarde.",
+      "pane_pid": 1000,
+      "home": "/Users/danielgomezmartin",
+      "procesos": [
+        {"pid": 1000, "ppid": 1, "uid": 501, "argv": ["-zsh"], "inicio_ms": 1794099400000},
+        {"pid": 1100, "ppid": 1000, "uid": 501, "argv": ["node", "/usr/local/lib/node_modules/@openai/codex/bin/codex.js", "--yolo"], "inicio_ms": 1794100000000},
+        {"pid": 1200, "ppid": 1100, "uid": 501, "argv": ["/usr/local/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/codex/codex", "--yolo"], "inicio_ms": 1794100000300}
+      ],
+      "fichas": {},
+      "abiertos": {"1200": ["/Users/danielgomezmartin/.codex/logs_2.sqlite", "/Users/danielgomezmartin/.codex/tmp/arg0/codex-arg0Xq1/.lock"]},
+      "rollouts": {},
+      "cwds": {"1100": "/Users/danielgomezmartin", "1200": "/Users/danielgomezmartin"},
+      "pane_current_path": "/Users/danielgomezmartin",
+      "hilos": [
+        {"id": "01a1d2e4-5b6c-7d8e-9f01-2a3b4c5d6e7f", "cwd": "/Users/danielgomezmartin", "created_at_ms": 1794100002000, "updated_at_ms": 1794100050000, "originator": "codex-tui", "archived": 0, "thread_source": "user"},
+        {"id": "01a1d2f9-0a1b-7c2d-8e3f-4a5b6c7d8e9f", "cwd": "/Users/danielgomezmartin", "created_at_ms": 1794100300000, "updated_at_ms": 1794100400000, "originator": "codex-tui", "archived": 0, "thread_source": "user"}
+      ],
+      "espera": {"provider": "codex", "session_id": "01a1d2f9-0a1b-7c2d-8e3f-4a5b6c7d8e9f", "cwd": "/Users/danielgomezmartin", "source": "threads"}
+    },
+    {
+      "nombre": "codex_0167_otro_codex_en_la_misma_carpeta_da_sin_id",
+      "descripcion": "Otro codex vivo en la misma carpeta arrancó antes de que se creara el hilo: podría ser suyo, así que nadie lo recibe.",
+      "pane_pid": 1000,
+      "home": "/Users/danielgomezmartin",
+      "procesos": [
+        {"pid": 1000, "ppid": 1, "uid": 501, "argv": ["-zsh"], "inicio_ms": 1794099400000},
+        {"pid": 1100, "ppid": 1000, "uid": 501, "argv": ["node", "/usr/local/lib/node_modules/@openai/codex/bin/codex.js", "--yolo"], "inicio_ms": 1794100000000},
+        {"pid": 1200, "ppid": 1100, "uid": 501, "argv": ["/usr/local/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/codex/codex", "--yolo"], "inicio_ms": 1794100000300},
+        {"pid": 2100, "ppid": 1, "uid": 501, "argv": ["codex", "--yolo"], "inicio_ms": 1794100010000}
+      ],
+      "fichas": {},
+      "abiertos": {"1200": ["/Users/danielgomezmartin/.codex/logs_2.sqlite", "/Users/danielgomezmartin/.codex/tmp/arg0/codex-arg0Xq1/.lock"]},
+      "rollouts": {},
+      "cwds": {"1100": "/Users/danielgomezmartin", "1200": "/Users/danielgomezmartin", "2100": "/Users/danielgomezmartin"},
+      "pane_current_path": "/Users/danielgomezmartin",
+      "hilos": [
+        {"id": "01a1d2e4-5b6c-7d8e-9f01-2a3b4c5d6e7f", "cwd": "/Users/danielgomezmartin", "created_at_ms": 1794100020000, "updated_at_ms": 1794100060000, "originator": "codex-tui", "archived": 0, "thread_source": "user"}
+      ],
+      "espera": {"provider": "codex", "session_id": null, "cause": "sin_id"}
+    },
+    {
+      "nombre": "codex_0167_app_server_no_compite",
+      "descripcion": "El app-server del Codex de escritorio en la misma carpeta no es otro TUI: no le quita el hilo a nadie.",
+      "pane_pid": 1000,
+      "home": "/Users/danielgomezmartin",
+      "procesos": [
+        {"pid": 1000, "ppid": 1, "uid": 501, "argv": ["-zsh"], "inicio_ms": 1794099400000},
+        {"pid": 1100, "ppid": 1000, "uid": 501, "argv": ["node", "/usr/local/lib/node_modules/@openai/codex/bin/codex.js", "--yolo"], "inicio_ms": 1794100000000},
+        {"pid": 1200, "ppid": 1100, "uid": 501, "argv": ["/usr/local/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/codex/codex", "--yolo"], "inicio_ms": 1794100000300},
+        {"pid": 2200, "ppid": 1, "uid": 501, "argv": ["/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex", "-c", "features.code_mode_host=true", "app-server"], "inicio_ms": 1794100001000}
+      ],
+      "fichas": {},
+      "abiertos": {"1200": ["/Users/danielgomezmartin/.codex/logs_2.sqlite", "/Users/danielgomezmartin/.codex/tmp/arg0/codex-arg0Xq1/.lock"]},
+      "rollouts": {},
+      "cwds": {"1100": "/Users/danielgomezmartin", "1200": "/Users/danielgomezmartin", "2200": "/Users/danielgomezmartin"},
+      "pane_current_path": "/Users/danielgomezmartin",
+      "hilos": [
+        {"id": "01a1d2e4-5b6c-7d8e-9f01-2a3b4c5d6e7f", "cwd": "/Users/danielgomezmartin", "created_at_ms": 1794100020000, "updated_at_ms": 1794100060000, "originator": "codex-tui", "archived": 0, "thread_source": "user"}
+      ],
+      "espera": {"provider": "codex", "session_id": "01a1d2e4-5b6c-7d8e-9f01-2a3b4c5d6e7f", "source": "threads"}
+    },
+    {
+      "nombre": "codex_0167_resume_en_argv_manda_sobre_threads",
+      "descripcion": "Con resume <uuid> en la línea de órdenes manda la línea de órdenes, aunque haya un hilo más nuevo en su carpeta.",
+      "pane_pid": 1000,
+      "home": "/Users/danielgomezmartin",
+      "procesos": [
+        {"pid": 1000, "ppid": 1, "uid": 501, "argv": ["-zsh"], "inicio_ms": 1794099400000},
+        {"pid": 1100, "ppid": 1000, "uid": 501, "argv": ["node", "/usr/local/lib/node_modules/@openai/codex/bin/codex.js", "--yolo", "resume", "019a4e2b-6c3d-7f81-9a05-3e7b1c8d2f46"], "inicio_ms": 1794100000000},
+        {"pid": 1200, "ppid": 1100, "uid": 501, "argv": ["/usr/local/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/codex/codex", "--yolo", "resume", "019a4e2b-6c3d-7f81-9a05-3e7b1c8d2f46"], "inicio_ms": 1794100000300}
+      ],
+      "fichas": {},
+      "abiertos": {"1200": ["/Users/danielgomezmartin/.codex/logs_2.sqlite", "/Users/danielgomezmartin/.codex/tmp/arg0/codex-arg0Xq1/.lock"]},
+      "rollouts": {},
+      "cwds": {"1100": "/Users/danielgomezmartin", "1200": "/Users/danielgomezmartin"},
+      "pane_current_path": "/Users/danielgomezmartin",
+      "hilos": [
+        {"id": "01a1d2f9-0a1b-7c2d-8e3f-4a5b6c7d8e9f", "cwd": "/Users/danielgomezmartin", "created_at_ms": 1794100300000, "updated_at_ms": 1794100400000, "originator": "codex-tui", "archived": 0, "thread_source": "user"}
+      ],
+      "espera": {"provider": "codex", "session_id": "019a4e2b-6c3d-7f81-9a05-3e7b1c8d2f46", "source": "argv"}
+    },
+    {
+      "nombre": "codex_0167_hilo_anterior_al_arranque_da_sin_id",
+      "descripcion": "El único hilo de esa carpeta se creó más de 5 s antes de que arrancara el proceso: puede ser un /resume dentro del TUI o de otra sesión. Sin id.",
+      "pane_pid": 1000,
+      "home": "/Users/danielgomezmartin",
+      "procesos": [
+        {"pid": 1000, "ppid": 1, "uid": 501, "argv": ["-zsh"], "inicio_ms": 1794099400000},
+        {"pid": 1100, "ppid": 1000, "uid": 501, "argv": ["node", "/usr/local/lib/node_modules/@openai/codex/bin/codex.js", "--yolo"], "inicio_ms": 1794100000000},
+        {"pid": 1200, "ppid": 1100, "uid": 501, "argv": ["/usr/local/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/codex/codex", "--yolo"], "inicio_ms": 1794100000300}
+      ],
+      "fichas": {},
+      "abiertos": {"1200": ["/Users/danielgomezmartin/.codex/logs_2.sqlite", "/Users/danielgomezmartin/.codex/tmp/arg0/codex-arg0Xq1/.lock"]},
+      "rollouts": {},
+      "cwds": {"1100": "/Users/danielgomezmartin", "1200": "/Users/danielgomezmartin"},
+      "pane_current_path": "/Users/danielgomezmartin",
+      "hilos": [
+        {"id": "01a19811-f606-7df3-b545-27e81fafca0c", "cwd": "/Users/danielgomezmartin", "created_at_ms": 1794099994000, "updated_at_ms": 1794100500000, "originator": "codex-tui", "archived": 0, "thread_source": "user"}
+      ],
+      "espera": {"provider": "codex", "session_id": null, "cause": "sin_id"}
     }
   ],
   "guarda": [

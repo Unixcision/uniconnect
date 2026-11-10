@@ -158,11 +158,13 @@ actor UniConnectLocalTmuxService: UniConnectLocalTmuxInspecting {
             if let directory = live?.environment["CLAUDE_CONFIG_DIR"], directory.hasPrefix("/") {
                 configDirectories[pid] = directory
             }
+            let identity = processIdentity(pid)
             samples.append(AgentProcessSample(
                 pid: pid,
                 parentPID: info.parentPID,
-                userID: processIdentity(pid).map { Int($0.userID) } ?? -1,
-                arguments: live?.arguments ?? []
+                userID: identity.map { Int($0.userID) } ?? -1,
+                arguments: live?.arguments ?? [],
+                startMilliseconds: identity.map(Self.startMilliseconds)
             ))
         }
         // A session file only counts for a live process that already is Claude by the strict
@@ -177,8 +179,24 @@ actor UniConnectLocalTmuxService: UniConnectLocalTmuxInspecting {
             return AgentClaudeSessionDirectory(root: root, isLiveClaude: { liveClaude.contains($0) }).file(pid: pid)
         }
         var openFiles = knownOpenFiles ?? [:]
+        let roots = discovery.providerRoots(rootPID: rootPID, processes: samples)
+        var codexHome = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true).appendingPathComponent(".codex", isDirectory: true)
+        if roots.count == 1, let root = roots.first, root.provider == .codex {
+            // Codex 0.166+ no deja su rollout abierto: su conversación sale de la tabla threads, y
+            // para eso hace falta ver los demás Codex vivos de este usuario (fuera de este panel).
+            let inPane = Set(samples.map(\.pid))
+            for info in processes.processesByPID.values where !inPane.contains(info.pid) && info.name.hasPrefix("codex") {
+                guard let identity = processIdentity(info.pid), let live = processArguments(info.pid) else { continue }
+                samples.append(AgentProcessSample(
+                    pid: info.pid, parentPID: info.parentPID, userID: Int(identity.userID),
+                    arguments: live.arguments, startMilliseconds: Self.startMilliseconds(identity)
+                ))
+            }
+            if let custom = processArguments(root.process.pid)?.environment["CODEX_HOME"], custom.hasPrefix("/") {
+                codexHome = URL(fileURLWithPath: custom, isDirectory: true)
+            }
+        }
         if knownOpenFiles == nil {
-            let roots = discovery.providerRoots(rootPID: rootPID, processes: samples)
             if roots.count == 1, let root = roots.first, root.provider == .codex {
                 // lsof only for the single Codex root and its own branch, never for every pane.
                 for member in discovery.branch(of: root, processes: samples) {
@@ -194,9 +212,15 @@ actor UniConnectLocalTmuxService: UniConnectLocalTmuxInspecting {
             rolloutFirstLine: Self.firstLine(ofFileAt:),
             fallbackDirectory: paneDirectory.hasPrefix("/") ? paneDirectory : nil,
             processDirectory: { processDirectory($0) },
-            resolvingPath: { AgentResumeWorkingDirectory().realPath($0) }
+            resolvingPath: { AgentResumeWorkingDirectory().realPath($0) },
+            codexThreads: { AgentCodexThreadStore(codexHome: codexHome).threads(workingDirectories: $0) }
         )
         return AgentDiscoveryPass(outcome: outcome, openFiles: openFiles)
+    }
+
+    /// When a process started, in milliseconds since 1970, from its kernel record.
+    static func startMilliseconds(_ identity: UniConnectLocalTmuxProcessIdentity) -> Int64 {
+        Int64(identity.startSeconds) * 1_000 + Int64(identity.startMicroseconds / 1_000)
     }
 
     /// A process's current folder through `proc_pidinfo` (read-only, no subprocess).

@@ -13,6 +13,9 @@ public struct AgentObservedConversation: Sendable, Equatable {
         case rollout
         /// The command line; it can be stale after `/clear` or an in-app `/resume`.
         case argv
+        /// Codex's `threads` table (`state_<n>.sqlite`): the newest terminal conversation of its
+        /// folder created after the process started, when no other Codex there could own it.
+        case threads
     }
 
     /// The agent.

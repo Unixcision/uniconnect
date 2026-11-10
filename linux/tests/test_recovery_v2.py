@@ -80,6 +80,10 @@ class DetectionContractTest(unittest.TestCase):
         casos = contract("deteccion-casos.json")["casos"]
         self.assertGreaterEqual(len(casos), 14)
         for caso in casos:
+            if caso.get("hilos"):
+                # Fuente `threads` (Codex 0.166+, 10-11): la leen agent_probe.py y el Mac. recovery.py
+                # lanza sus Codex con `resume <id>` y no la necesita; ver contracts/agent-tree-v1/LEEME.md.
+                continue
             with self.subTest(caso=caso["nombre"]):
                 readers = readers_for_case(caso)
                 found = recovery.detect_agent(caso["pane_pid"], readers.process_table(), readers, caso.get("pane_current_path"))

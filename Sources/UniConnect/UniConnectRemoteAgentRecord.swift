@@ -188,7 +188,7 @@ struct UniConnectRemoteAgentRecord: Codable, Equatable, Sendable {
         isValidProvider(observation.provider)
             && AgentNoPromptPolicy.isValidSessionID(observation.sessionID)
             && (observation.workingDirectory.map(isValidDirectory) ?? true)
-            && ["ficha", "rollout", "argv", "hook", "manifiesto", "registro"].contains(observation.source)
+            && ["ficha", "rollout", "argv", "threads", "hook", "manifiesto", "registro"].contains(observation.source)
     }
 
     private static func isValidProvider(_ provider: String) -> Bool {

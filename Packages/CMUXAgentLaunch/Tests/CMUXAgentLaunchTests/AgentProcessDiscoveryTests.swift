@@ -48,7 +48,18 @@ struct AgentProcessDiscoveryTests {
                 guard let pid = Self.int(row["pid"]), let ppid = Self.int(row["ppid"]) else { return nil }
                 return AgentProcessSample(
                     pid: pid, parentPID: ppid, userID: Self.int(row["uid"]) ?? 501,
-                    arguments: row["argv"] as? [String] ?? []
+                    arguments: row["argv"] as? [String] ?? [],
+                    startMilliseconds: (row["inicio_ms"] as? NSNumber)?.int64Value
+                )
+            }
+            let threads = ((entry["hilos"] as? [[String: Any]]) ?? []).compactMap { row -> AgentCodexThread? in
+                guard let id = row["id"] as? String, let cwd = row["cwd"] as? String,
+                      let created = (row["created_at_ms"] as? NSNumber)?.int64Value,
+                      let updated = (row["updated_at_ms"] as? NSNumber)?.int64Value else { return nil }
+                return AgentCodexThread(
+                    id: id, workingDirectory: cwd, createdAtMilliseconds: created, updatedAtMilliseconds: updated,
+                    originator: row["originator"] as? String, archived: (row["archived"] as? NSNumber)?.boolValue ?? false,
+                    threadSource: row["thread_source"] as? String
                 )
             }
             // El arnés sirve la ficha donde la buscaría la implementación (en /root si la raíz es
@@ -81,7 +92,8 @@ struct AgentProcessDiscoveryTests {
                 rolloutFirstLine: { firstLines[$0] },
                 fallbackDirectory: entry["pane_current_path"] as? String,
                 processDirectory: { directories[$0] },
-                resolvingPath: { links[$0] ?? $0 }
+                resolvingPath: { links[$0] ?? $0 },
+                codexThreads: { folders in threads.filter { folders.contains($0.workingDirectory) } }
             )
             let expected = try #require(entry["espera"] as? [String: Any], "\(name): espera")
             let cause = expected["cause"] as? String

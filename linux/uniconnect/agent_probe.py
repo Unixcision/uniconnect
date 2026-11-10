@@ -13,8 +13,12 @@ Criterio (contracts/agent-tree-v1/deteccion-casos.json):
 - Raíz = proceso de un proveedor sin ningún antepasado de proveedor dentro del
   subárbol. 0 raíces -> ``sin_ia``; 2 o más -> ``identidad_ambigua``; 1 -> esa IA.
 - Identidad: Claude por su ficha ``<config>/sessions/<pid>.json`` (``ficha``) o por
-  argv (``argv``, puede estar desfasado); Codex por el rollout abierto (``rollout``)
-  o por ``resume <uuid>``; agy por ``--conversation``; grok por ``-r``/``--resume``.
+  argv (``argv``, puede estar desfasado); Codex por el rollout abierto (``rollout``),
+  por ``resume <uuid>`` o, sin ninguno de los dos (Codex 0.166+, que ya no deja el rollout
+  abierto), por su tabla ``threads`` de ``$CODEX_HOME/state_<n>.sqlite`` (``threads``, solo
+  lectura): el hilo de ``codex-tui`` de su carpeta creado tras arrancar (5 s de margen), el que
+  cambió más tarde, y nunca si otro Codex vivo de esa carpeta arrancó a tiempo de ser su dueño;
+  agy por ``--conversation``; grok por ``-r``/``--resume``.
 - Ante la duda no se da id (decisiones del 24-09): tras ``--`` no hay opciones, dos ids
   distintos en argv dan ``sin_id``, con varios rollouts abiertos solo vale el que coincide
   con ``resume <uuid>`` y la ficha nunca clasifica a un proceso como Claude.
@@ -273,8 +277,75 @@ def subtree(pane_pid, processes):
     return order, parent
 
 
+CODEX_THREAD_SLACK_MS = 5000
+CODEX_BACKGROUND_COMMANDS = frozenset(("app-server", "exec-server", "mcp-server", "exec", "mcp", "review", "login",
+                                       "logout", "apply", "completion", "sandbox", "cloud", "proto", "debug"))
+
+
+def codex_folder(pids, procesos, cwd_de_reserva):
+    """La carpeta de un Codex: su ``-C``/``--cd`` (antes de ``--``) o la carpeta actual de sus procesos."""
+    for pid in pids:
+        argv = (procesos.get(pid) or {}).get("argv") or []
+        options = []
+        for value in argv[1:]:
+            if value == "--":
+                break
+            options.append(value)
+        for index, value in enumerate(options):
+            if value in ("-C", "--cd") and index + 1 < len(options) and options[index + 1].startswith("/"):
+                return options[index + 1]
+            if value.startswith("--cd=") and value[5:].startswith("/"):
+                return value[5:]
+    for pid in pids:
+        folder = cwd_de_reserva(pid)
+        if isinstance(folder, str) and folder.startswith("/"):
+            return folder
+    return None
+
+
+def codex_thread(root, branch, procesos, hilos_de, cwd_de_reserva, realpath):
+    """El hilo de ``threads`` de un Codex sin rollout ni ``resume <uuid>``, o None (igual que el Mac)."""
+    starts = [procesos[pid].get("start_ms") for pid in [root] + list(branch) if pid in procesos]
+    starts = [value for value in starts if isinstance(value, int)]
+    folder = codex_folder([root] + list(branch), procesos, cwd_de_reserva)
+    if not starts or not folder:
+        return None
+    start, resolved = min(starts), realpath(folder)
+    rows = hilos_de(sorted({folder, resolved}), int(procesos[root].get("uid", -1))) or []
+    candidates = [row for row in rows if isinstance(row, dict)
+                  and row.get("originator") == "codex-tui" and not row.get("archived")
+                  and row.get("thread_source") != "subagent"
+                  and isinstance(row.get("cwd"), str) and realpath(row["cwd"]) == resolved
+                  and isinstance(row.get("created_at_ms"), int) and isinstance(row.get("updated_at_ms"), int)
+                  and row["created_at_ms"] >= start - CODEX_THREAD_SLACK_MS]
+    if not candidates:
+        return None
+    newest = max(candidates, key=lambda row: row["updated_at_ms"])
+    if sum(1 for row in candidates if row["updated_at_ms"] == newest["updated_at_ms"]) > 1:
+        return None
+    own = {root} | set(branch)
+    for pid, process in procesos.items():
+        argv = process.get("argv") or []
+        if pid in own or provider_of(argv) != "codex":
+            continue
+        words = []
+        for value in argv[1:]:
+            if value == "--":
+                break
+            words.append(value)
+        if any(value in CODEX_BACKGROUND_COMMANDS for value in words):
+            continue  # El app-server del Codex de escritorio, un exec…: no es otro TUI.
+        other = codex_folder([pid], procesos, cwd_de_reserva)
+        if not other or realpath(other) != resolved:
+            continue
+        other_start = process.get("start_ms")
+        if not isinstance(other_start, int) or newest["created_at_ms"] >= other_start - CODEX_THREAD_SLACK_MS:
+            return None  # Otro Codex vivo de esa carpeta pudo crear ese hilo: nadie lo recibe.
+    return newest
+
+
 def discover(pane_pid, procesos, ficha_de, abiertos_de, primera_linea_de, cwd_de_reserva, *,
-             pane_path=None, realpath=None, sandbox_de=None):
+             pane_path=None, realpath=None, sandbox_de=None, hilos_de=None):
     """Núcleo puro: la IA de un panel a partir de sus tablas.
 
     - ``procesos``: {pid: {"pid", "ppid", "uid", "argv"}} o una lista de esos dicts.
@@ -284,6 +355,9 @@ def discover(pane_pid, procesos, ficha_de, abiertos_de, primera_linea_de, cwd_de
     - ``cwd_de_reserva(pid)``: carpeta actual del proceso, o None.
 
     - ``sandbox_de(pid)``: True si el proceso tiene ``IS_SANDBOX=1`` en su entorno, o None.
+    - ``hilos_de(carpetas, uid)``: filas de la tabla ``threads`` de Codex de esas carpetas (dicts con
+      ``id``, ``cwd``, ``created_at_ms``, ``updated_at_ms``, ``originator``, ``archived``,
+      ``thread_source``); los procesos llevan ``start_ms``. Sin ella no hay fuente ``threads``.
 
     Devuelve {"reason": None|"sin_ia"|"identidad_ambigua"|"sin_id", "agent": dict|None,
     "roots": [pid, ...]}. ``agent.launch`` lleva las opciones permitidas con que se lanzó.
@@ -354,6 +428,10 @@ def discover(pane_pid, procesos, ficha_de, abiertos_de, primera_linea_de, cwd_de
                 pass
         elif not found and resumed:
             agent.update(session_id=resumed, source="argv")
+        elif not found and hilos_de is not None:
+            thread = codex_thread(root, branch, procesos, hilos_de, cwd_de_reserva, realpath)
+            if thread:
+                agent.update(session_id=canonical_id(thread["id"]) or thread["id"], source="threads", cwd=thread["cwd"])
     elif provider == "agy":
         value = option_value(argv, ("--conversation",), is_session_id)
         if value:
@@ -683,7 +761,8 @@ class HostReader:
                 except (OSError, IndexError):
                     continue
                 argv = [part.decode("utf-8", "replace") for part in raw.split(b"\0") if part]
-                table[pid] = {"pid": pid, "ppid": int(fields[1]), "uid": uid, "argv": argv}
+                table[pid] = {"pid": pid, "ppid": int(fields[1]), "uid": uid, "argv": argv,
+                              "start_ms": self._start_ms(fields)}
             return table
         result = self.run(["ps", "-A", "-ww", "-o", "pid=,ppid=,uid=,args="])
         for line in (result.stdout if result and result.returncode == 0 else "").splitlines():
@@ -700,6 +779,62 @@ class HostReader:
             table[int(parts[0])] = {"pid": int(parts[0]), "ppid": int(parts[1]), "uid": uid,
                                     "argv": parts[3].split() if len(parts) > 3 else []}
         return table
+
+    def _start_ms(self, fields):
+        """Arranque del proceso en ms desde 1970: campo 22 de /proc/<pid>/stat más el btime del arranque."""
+        try:
+            if not hasattr(self, "_boot"):
+                with open("/proc/stat") as handle:
+                    self._boot = next(int(line.split()[1]) for line in handle if line.startswith("btime "))
+                self._ticks = os.sysconf("SC_CLK_TCK")
+            return int((self._boot + int(fields[19]) / self._ticks) * 1000)
+        except (OSError, ValueError, IndexError, StopIteration):
+            return None
+
+    def threads(self, folders, uid):
+        """Filas de ``threads`` de Codex de esas carpetas, del ``state_<n>.sqlite`` más alto, en solo lectura."""
+        try:
+            import sqlite3
+        except ImportError:
+            return []
+        homes = []
+        if os.environ.get("CODEX_HOME") and os.geteuid() == uid:
+            homes.append(os.environ["CODEX_HOME"])
+        try:
+            homes.append(os.path.join(pwd.getpwuid(uid).pw_dir, ".codex"))
+        except (KeyError, OverflowError, TypeError):
+            pass
+        for home in dict.fromkeys(homes):
+            try:
+                names = os.listdir(home)
+            except OSError:
+                continue
+            versions = sorted((int(name[6:-7]), name) for name in names
+                              if name.startswith("state_") and name.endswith(".sqlite") and name[6:-7].isdigit())
+            if not versions:
+                continue
+            path = os.path.join(home, versions[-1][1])
+            try:
+                connection = sqlite3.connect("file:%s?mode=ro" % path, uri=True, timeout=0.5)
+                try:
+                    columns = {row[1] for row in connection.execute("PRAGMA table_info(threads)")}
+                    if not {"id", "cwd", "created_at", "updated_at", "archived"} <= columns:
+                        return []
+                    created = "coalesce(created_at_ms, created_at * 1000)" if "created_at_ms" in columns else "created_at * 1000"
+                    updated = "coalesce(updated_at_ms, updated_at * 1000)" if "updated_at_ms" in columns else "updated_at * 1000"
+                    originator = "originator" if "originator" in columns else "NULL"
+                    source = "thread_source" if "thread_source" in columns else "NULL"
+                    marks = ",".join("?" for _ in folders)
+                    rows = connection.execute(
+                        "SELECT id, cwd, %s, %s, %s, archived, %s FROM threads WHERE cwd IN (%s) ORDER BY %s DESC LIMIT 256"
+                        % (created, updated, originator, source, marks, updated), list(folders)).fetchall()
+                finally:
+                    connection.close()
+            except sqlite3.Error:
+                return []
+            return [{"id": row[0], "cwd": row[1], "created_at_ms": row[2], "updated_at_ms": row[3],
+                     "originator": row[4], "archived": bool(row[5]), "thread_source": row[6]} for row in rows]
+        return []
 
     def ficha(self, pid, uid):
         directories = [self.own_sessions]
@@ -1143,7 +1278,7 @@ def probe(socket_name="default", sessions=(), reader=None, now=None, accounts=Fa
         for pane in members:
             result = discover(pane["pane_pid"], table, reader.ficha, reader.open_files, reader.first_line,
                               reader.cwd, pane_path=pane["current_path"], realpath=reader.realpath,
-                              sandbox_de=getattr(reader, "sandbox", None))
+                              sandbox_de=getattr(reader, "sandbox", None), hilos_de=getattr(reader, "threads", None))
             results.append((pane, result))
         chosen, result = combine(results)
         if accounts and result["agent"]:

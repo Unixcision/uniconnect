@@ -33,7 +33,7 @@ sale en verde sin haber comparado nada es peor que no tenerlo.
 ```
 { "version": 1,
   "casos":  [ { nombre, descripcion?, pane_pid, home, procesos, fichas, abiertos, rollouts,
-                cwds?, enlaces?, pane_current_path?, espera } ],
+                cwds?, enlaces?, pane_current_path?, hilos?, espera } ],
   "guarda": [ { nombre, descripcion?, proveedor, id, home, fichas_vivas, procesos, abiertos,
                 cerrojos, proc_legible?, espera } ] }
 ```
@@ -42,7 +42,8 @@ sale en verde sin haber comparado nada es peor que no tenerlo.
 
 - `pane_pid`: el `#{pane_pid}` de tmux, que es el **shell** del panel, no la IA.
 - `home`: el HOME de quien sondea.
-- `procesos`: la tabla entera de `ps -eo pid=,ppid=,uid=,args=` (o de /proc), con `{pid, ppid, uid, argv}`.
+- `procesos`: la tabla entera de `ps -eo pid=,ppid=,uid=,args=` (o de /proc), con `{pid, ppid, uid, argv}`
+  y, opcional, `inicio_ms` (arranque del proceso en ms desde 1970).
   Puede traer procesos de fuera del subárbol del panel, y `entorno` en alguno de ellos. El criterio
   **nunca** mira el entorno.
 - `fichas`: el contenido de `~/.claude/sessions/<pid>.json`, indexado por el pid del nombre del
@@ -55,6 +56,9 @@ sale en verde sin haber comparado nada es peor que no tenerlo.
 - `cwds`: el cwd de cada proceso (`/proc/<pid>/cwd`, o `lsof -a -p <pid> -d cwd -Fn`). Opcional.
 - `enlaces`: rutas que son enlaces simbólicos y su destino real, por coincidencia exacta. Opcional.
 - `pane_current_path`: el último recurso para el cwd. Opcional.
+- `hilos`: filas de la tabla `threads` de Codex (`$CODEX_HOME/state_<n>.sqlite`, la de `n` más
+  alto, abierta en solo lectura), con `{id, cwd, created_at_ms, updated_at_ms, originator, archived,
+  thread_source}`. Opcional (10-11-2026).
 
 `espera` tiene tres formas:
 
@@ -100,7 +104,16 @@ la raíz, `status`, `version`), pero no puede contradecir ninguna de las que est
      - Un solo UUID abierto → ese (`rollout`).
      - Más de uno → solo vale el que coincide con el `resume <uuid>` de argv (`rollout`). Si ninguno
        coincide, `sin_id`. Nunca «el más reciente» ni el de argv a solas.
-     - Ninguno → el `resume <uuid>` de argv (`argv`) → `sin_id`.
+     - Ninguno → el `resume <uuid>` de argv (`argv`) → la tabla `threads` (`threads`) → `sin_id`.
+     - `threads` (10-11-2026; Codex 0.166+ ya no deja el rollout abierto y guarda el estado en
+       SQLite): de las filas con el `cwd` del Codex (su `-C`/`--cd`, si no la carpeta actual de su
+       raíz, resueltas las dos), `originator` = `codex-tui`, `archived` = 0, `thread_source` distinto
+       de `subagent` (los subagentes comparten carpeta y `originator`) y `created_at_ms` ≥ arranque
+       de la raíz − 5 s, la de `updated_at_ms` más reciente (un empate es `sin_id`). Cubre `/new`
+       dentro del TUI. Si otro Codex vivo de esa carpeta que no sea un subcomando de fondo
+       (`app-server`, `exec`, `mcp-server`…) arrancó antes de que se creara ese hilo (con el mismo
+       margen), o no se sabe cuándo arrancó, `sin_id`: podría ser suyo. `recovery.py` no lee esta
+       fuente (sus Codex llevan `resume <id>`) y su prueba salta los casos con `hilos`.
      - Con `rollout`, el cwd sale de `payload.cwd` de la primera línea de **ese** rollout.
    - **agy**: `--conversation <id>` (`argv`). **grok**: `-r` o `--resume <id>` (`argv`).
    - **cwd**: el de la ficha o el rollout; si no hay, el del proceso raíz; si tampoco,
