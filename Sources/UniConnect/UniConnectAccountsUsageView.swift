@@ -212,7 +212,7 @@ struct UniConnectAccountsUsageView: View {
                     .foregroundStyle(.secondary)
             }
             if let usage = account.usage {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 230), spacing: 14)], spacing: 14) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 400), spacing: 14)], spacing: 14) {
                     ForEach(usage.limits, id: \.id) { limit in
                         limitCard(limit, usage: usage, history: account.history, math: math)
                     }
@@ -275,7 +275,7 @@ struct UniConnectAccountsUsageView: View {
                 }
                 if let projection, !reading.wasReset {
                     let rateFormat = String(localized: "uniconnect.accounts.usage.rate", defaultValue: "Ritmo: %@ puntos al día")
-                    Text(verbatim: String(format: rateFormat, String(format: "%.1f", projection.perDay)))
+                    Text(verbatim: String(format: rateFormat, projection.perDay.formatted(.number.precision(.fractionLength(1)).locale(Locale(identifier: "es_ES")))))
                         .font(.system(size: 11))
                     if let exhaustion = projection.exhaustion {
                         let format = String(localized: "uniconnect.accounts.usage.exhaustion", defaultValue: "Se agotaría el %@")
