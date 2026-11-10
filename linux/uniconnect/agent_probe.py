@@ -21,7 +21,12 @@ Criterio (contracts/agent-tree-v1/deteccion-casos.json):
 
 Nunca escribe, nunca envía teclas ni cambia opciones de tmux y nunca usa sudo.
 
-CLI: ``[--socket NOMBRE|default] [--session NOMBRE]...`` (``default`` no pasa ``-L``).
+CLI: ``[--socket NOMBRE|default] [--session NOMBRE]... [--accounts]`` (``default`` no pasa ``-L``).
+
+Con ``--accounts`` (contracts/accounts-v1) cada ``agent`` lleva además ``account``: la cuenta con
+la que está esa IA, leída en este momento de sus ficheros (``.claude.json``, ``.codex/auth.json``)
+según el entorno del propio proceso (``CLAUDE_CONFIG_DIR``, ``CODEX_HOME``, ``HOME``). Nada se
+guarda entre llamadas; de los secretos solo se mira si existen, y jamás salen de aquí.
 Sale siempre con 0 e imprime una línea JSON (<= 256 KB); el mal uso sale con 2:
 
     {"version": 1, "checked_at": "2026-09-24T14:30:04Z", "socket": "default",
@@ -38,6 +43,8 @@ Sale siempre con 0 e imprime una línea JSON (<= 256 KB); el mal uso sale con 2:
 ``server: false`` sin error significa que ese servidor tmux no tiene sesiones.
 """
 
+import base64
+import binascii
 import datetime
 import json
 import os
@@ -69,6 +76,12 @@ TMUX_FORMAT = "\t".join(("#{session_name}", "#{session_id}", "#{window_index}", 
 NOT_AGENTS = frozenset(("sudo", "doas", "env", "sh", "bash", "zsh", "fish", "dash", "ksh", "login", "tmux",
                         "script", "nohup", "timeout", "stdbuf", "nice", "setsid", "python", "python3"))
 SEARCH_PATH = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+# accounts-v1: del entorno de la IA solo salen estas rutas; de los secretos, solo si están puestos.
+ACCOUNT_ENV_PATHS = ("HOME", "CLAUDE_CONFIG_DIR", "CODEX_HOME")
+ACCOUNT_ENV_FLAGS = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX",
+                     "CLAUDE_CODE_USE_FOUNDRY", "OPENAI_API_KEY")
+MAX_ACCOUNT_FILE = 64 * 1024 * 1024
+CLAUDE_PLANS = {"claude_max": "Max", "claude_pro": "Pro", "claude_team": "Team", "claude_enterprise": "Enterprise"}
 
 
 def basename(value):
@@ -384,6 +397,116 @@ def combine(panes):
     return with_root[0]
 
 
+def _text(value, limit=200):
+    """Texto de una línea, recortado, o None."""
+    if not isinstance(value, str):
+        return None
+    value = " ".join(value.split())
+    return value[:limit] or None
+
+
+def _flag(environment, name):
+    """True si la variable está puesta con un valor que la activa (``1``, ``true``…)."""
+    value = (environment or {}).get(name)
+    if value is True:
+        return True
+    return isinstance(value, str) and value.strip().lower() not in ("", "0", "false", "no", "off")
+
+
+def jwt_claims(token):
+    """Lo que dice un JWT sin verificarlo (solo para leer el email y el plan), o {}."""
+    if not isinstance(token, str) or token.count(".") != 2:
+        return {}
+    part = token.split(".")[1]
+    part += "=" * (-len(part) % 4)
+    try:
+        value = json.loads(base64.urlsafe_b64decode(part.encode("ascii")).decode("utf-8"))
+    except (ValueError, UnicodeError, binascii.Error):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def account_of(provider, uid, environment, read_file, user_of, read_at):
+    """La cuenta de una IA en este momento (contracts/accounts-v1), sin caché.
+
+    - ``environment``: rutas y banderas del entorno del proceso (``account_environment``) o None si
+      no se pudo leer; entonces vale el HOME del usuario dueño del proceso.
+    - ``read_file(ruta)``: ``("ok", dict)``, ``("absent", None)``, ``("denied", None)`` o
+      ``("invalid", None)``.
+    - ``user_of(uid)``: ``(nombre, home)`` del usuario, o ``(None, None)``.
+
+    ``state``: ``ok`` (sabemos con qué entra), ``sin_sesion`` (no hay cuenta ni clave),
+    ``no_legible`` (sus ficheros no se pueden leer con este usuario) o ``desconocida`` (UniConnect
+    no sabe dónde guarda la cuenta ese proveedor).
+    """
+    name, home_of_user = user_of(uid)
+    environment = environment or {}
+    home = environment.get("HOME") or home_of_user
+    account = {"state": "desconocida", "email": None, "method": None, "plan": None, "organization": None,
+               "os_user": name, "config": None, "read_at": read_at}
+    if provider == "claude":
+        for flag, method in (("CLAUDE_CODE_USE_BEDROCK", "bedrock"), ("CLAUDE_CODE_USE_VERTEX", "vertex"),
+                             ("CLAUDE_CODE_USE_FOUNDRY", "foundry")):
+            if _flag(environment, flag):
+                account.update(state="ok", method=method)
+                return account
+        config_dir = environment.get("CLAUDE_CONFIG_DIR")
+        path = os.path.join(config_dir, ".claude.json") if config_dir else (
+            os.path.join(home, ".claude.json") if home else None)
+        if not path:
+            return account
+        account["config"] = path
+        status, data = read_file(path)
+        if status == "denied":
+            account["state"] = "no_legible"
+            return account
+        oauth = data.get("oauthAccount") if status == "ok" and isinstance(data, dict) else None
+        email = _text(oauth.get("emailAddress"), 320) if isinstance(oauth, dict) else None
+        if email:
+            plan = _text(oauth.get("planDisplayName"), 40)
+            if not plan:
+                credentials_dir = config_dir or (os.path.join(home, ".claude") if home else None)
+                if credentials_dir:
+                    found, credentials = read_file(os.path.join(credentials_dir, ".credentials.json"))
+                    stored = credentials.get("claudeAiOauth") if found == "ok" and isinstance(credentials, dict) else None
+                    kind = _text(stored.get("subscriptionType"), 40) if isinstance(stored, dict) else None
+                    plan = kind.capitalize() if kind else None
+            if not plan:
+                plan = CLAUDE_PLANS.get(oauth.get("organizationType"))
+            account.update(state="ok", method="oauth", email=email.lower(), plan=plan,
+                           organization=_text(oauth.get("organizationName")))
+        elif _flag(environment, "ANTHROPIC_API_KEY") or _flag(environment, "ANTHROPIC_AUTH_TOKEN"):
+            account.update(state="ok", method="api_key")
+        else:
+            account["state"] = "sin_sesion"
+        return account
+    if provider == "codex":
+        codex_home = environment.get("CODEX_HOME") or (os.path.join(home, ".codex") if home else None)
+        if not codex_home:
+            return account
+        path = os.path.join(codex_home, "auth.json")
+        account["config"] = path
+        status, data = read_file(path)
+        if status == "denied":
+            account["state"] = "no_legible"
+            return account
+        data = data if status == "ok" and isinstance(data, dict) else {}
+        tokens = data.get("tokens") if isinstance(data.get("tokens"), dict) else {}
+        claims = jwt_claims(tokens.get("id_token"))
+        email = _text(claims.get("email"), 320)
+        auth = claims.get("https://api.openai.com/auth")
+        auth = auth if isinstance(auth, dict) else {}
+        if email:
+            plan = _text(auth.get("chatgpt_plan_type"), 40)
+            account.update(state="ok", method="chatgpt", email=email.lower(), plan=plan.capitalize() if plan else None)
+        elif data.get("OPENAI_API_KEY") or _flag(environment, "OPENAI_API_KEY"):
+            account.update(state="ok", method="api_key")
+        else:
+            account["state"] = "sin_sesion"
+        return account
+    return account
+
+
 class HostReader:
     """Lectores reales del host (solo lectura). Linux usa /proc; macOS, ps y lsof."""
 
@@ -394,6 +517,7 @@ class HostReader:
         self.truncated = False
         config = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
         self.own_sessions = os.path.join(config, "sessions")
+        self._account_files = {}  # una sonda = un lector: nunca sobrevive a la llamada
 
     def run(self, argv, timeout=5):
         try:
@@ -494,6 +618,65 @@ class HostReader:
             return None
         return b"IS_SANDBOX=1" in raw.split(b"\0")
 
+    def account_environment(self, pid):
+        """Solo ACCOUNT_ENV_PATHS (valor) y ACCOUNT_ENV_FLAGS (``True`` si están puestas), o None.
+
+        Linux: /proc/<pid>/environ. macOS: sysctl KERN_PROCARGS2 (solo procesos del mismo usuario).
+        """
+        raw = None
+        if self.proc:
+            try:
+                with open("/proc/%d/environ" % pid, "rb") as handle:
+                    raw = handle.read(1048576).split(b"\0")
+            except OSError:
+                return None
+        else:
+            raw = _darwin_environment(pid)
+            if raw is None:
+                return None
+        values = {}
+        for item in raw:
+            name, sep, value = item.partition(b"=")
+            if not sep:
+                continue
+            name = name.decode("utf-8", "replace")
+            if name in ACCOUNT_ENV_PATHS:
+                text = value.decode("utf-8", "replace")
+                if text.startswith("/"):
+                    values[name] = text
+            elif name in ACCOUNT_ENV_FLAGS and value.strip():
+                values[name] = value.decode("utf-8", "replace") if name.startswith("CLAUDE_CODE_USE_") else True
+        return values
+
+    def read_account_file(self, path):
+        """Lee un JSON de cuenta en este momento; se recuerda solo durante esta misma sonda."""
+        if path in self._account_files:
+            return self._account_files[path]
+        try:
+            with open(path, "rb") as handle:
+                raw = handle.read(MAX_ACCOUNT_FILE + 1)
+            if len(raw) > MAX_ACCOUNT_FILE:
+                result = ("invalid", None)
+            else:
+                value = json.loads(raw.decode("utf-8"))
+                result = ("ok", value) if isinstance(value, dict) else ("invalid", None)
+        except (FileNotFoundError, NotADirectoryError):
+            result = ("absent", None)
+        except PermissionError:
+            result = ("denied", None)
+        except (OSError, ValueError, UnicodeError):
+            result = ("invalid", None)
+        self._account_files[path] = result
+        return result
+
+    @staticmethod
+    def user_of(uid):
+        try:
+            entry = pwd.getpwuid(uid)
+            return entry.pw_name, entry.pw_dir
+        except (KeyError, OverflowError, TypeError):
+            return None, None
+
     def cwd(self, pid):
         if self.proc:
             try:
@@ -550,13 +733,49 @@ class HostReader:
         return panes, None
 
 
+def _darwin_environment(pid):
+    """Entorno (lista de ``b"CLAVE=valor"``) de un proceso en macOS, o None si no se puede leer."""
+    try:
+        import ctypes
+        import ctypes.util
+        libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
+        mib = (ctypes.c_int * 3)(1, 49, int(pid))  # CTL_KERN, KERN_PROCARGS2
+        size = ctypes.c_size_t(0)
+        if libc.sysctl(mib, 3, None, ctypes.byref(size), None, 0) != 0 or not size.value:
+            return None
+        buffer = ctypes.create_string_buffer(size.value)
+        if libc.sysctl(mib, 3, buffer, ctypes.byref(size), None, 0) != 0:
+            return None
+    except (OSError, AttributeError, ValueError):
+        return None
+    raw = buffer.raw[:size.value]
+    if len(raw) < 4:
+        return None
+    argc = int.from_bytes(raw[:4], sys.byteorder)
+    position = raw.find(b"\0", 4)  # tras la ruta del ejecutable vienen NUL de relleno
+    if position < 0:
+        return None
+    while position < len(raw) and raw[position] == 0:
+        position += 1
+    parts = raw[position:].split(b"\0")
+    environment = []
+    for item in parts[argc:]:
+        if not item:
+            break
+        environment.append(item)
+    return environment
+
+
 def iso_now(now=None):
     moment = datetime.datetime.utcfromtimestamp(now if now is not None else time.time())
     return moment.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def probe(socket_name="default", sessions=(), reader=None, now=None):
-    """Lee el host y devuelve el JSON v1 (dict) de contracts/agent-tree-v1/sonda-salida.json."""
+def probe(socket_name="default", sessions=(), reader=None, now=None, accounts=False):
+    """Lee el host y devuelve el JSON v1 (dict) de contracts/agent-tree-v1/sonda-salida.json.
+
+    Con ``accounts`` cada ``agent`` lleva también ``account`` (contracts/accounts-v1).
+    """
     reader = reader or HostReader()
     host = reader.host() if hasattr(reader, "host") else HostReader.host()
     output = {"version": VERSION, "checked_at": iso_now(now), "socket": socket_name, "host": host,
@@ -583,6 +802,13 @@ def probe(socket_name="default", sessions=(), reader=None, now=None):
                               sandbox_de=getattr(reader, "sandbox", None))
             results.append((pane, result))
         chosen, result = combine(results)
+        if accounts and result["agent"]:
+            agent = dict(result["agent"])
+            process = table.get(agent["pid"], {})
+            agent["account"] = account_of(
+                agent["provider"], int(process.get("uid", -1)), reader.account_environment(agent["pid"]),
+                reader.read_account_file, reader.user_of, output["checked_at"])
+            result = dict(result, agent=agent)
         output["sessions"].append({
             "name": name, "session_id": members[0]["session_id"],
             "pane_id": chosen["pane_id"] if chosen else None,
@@ -609,10 +835,17 @@ def encode(output):
 
 
 def parse_arguments(arguments):
-    """CLI: ``[--socket NOMBRE|default] [--session NOMBRE]...``. Devuelve (socket, sesiones) o None."""
-    socket_name, sessions, index = "default", [], 0
+    """CLI: ``[--socket NOMBRE|default] [--session NOMBRE]... [--accounts]``.
+
+    Devuelve (socket, sesiones, cuentas) o None.
+    """
+    socket_name, sessions, index, accounts = "default", [], 0, False
     while index < len(arguments):
         option = arguments[index]
+        if option == "--accounts":
+            accounts = True
+            index += 1
+            continue
         if option in ("--socket", "--session") and index + 1 < len(arguments):
             value = arguments[index + 1]
             if option == "--socket":
@@ -626,18 +859,18 @@ def parse_arguments(arguments):
             index += 2
             continue
         return None
-    return socket_name, sessions
+    return socket_name, sessions, accounts
 
 
 def main(arguments=None, reader=None, stdout=None, now=None):
     stdout = stdout or sys.stdout
     parsed = parse_arguments(sys.argv[1:] if arguments is None else list(arguments))
     if parsed is None:
-        sys.stderr.write("uso: agent_probe.py [--socket NOMBRE|default] [--session NOMBRE]...\n")
+        sys.stderr.write("uso: agent_probe.py [--socket NOMBRE|default] [--session NOMBRE]... [--accounts]\n")
         return 2
-    socket_name, sessions = parsed
+    socket_name, sessions, accounts = parsed
     try:
-        output = probe(socket_name, sessions, reader=reader, now=now)
+        output = probe(socket_name, sessions, reader=reader, now=now, accounts=accounts)
     except Exception as error:  # La sonda nunca falla con traza: el error viaja en el JSON.
         output = {"version": VERSION, "checked_at": iso_now(now), "socket": socket_name, "host": None,
                   "server": False, "error": "sonda_fallo: " + type(error).__name__, "truncated": False,

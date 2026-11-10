@@ -1,0 +1,266 @@
+{
+  "version": 1,
+  "checked_at": "2026-11-10T12:30:06Z",
+  "hosts": [
+    {
+      "host_key": "local",
+      "label": "Este Mac",
+      "kind": "local",
+      "state": "ok",
+      "checked_at": "2026-11-10T12:30:04Z"
+    },
+    {
+      "host_key": "ssh:root@203.0.113.10:22",
+      "label": "root@203.0.113.10:22",
+      "kind": "ssh",
+      "state": "ok",
+      "checked_at": "2026-11-10T12:30:05Z"
+    },
+    {
+      "host_key": "ssh:root@178.105.40.42:22",
+      "label": "root@178.105.40.42:22",
+      "kind": "ssh",
+      "state": "ok",
+      "checked_at": "2026-11-10T12:30:05Z"
+    },
+    {
+      "host_key": "ssh:ec2-user@54.167.34.64:22",
+      "label": "ec2-user@54.167.34.64:22",
+      "kind": "ssh",
+      "state": "host_inaccesible",
+      "checked_at": "2026-11-10T12:30:06Z"
+    },
+    {
+      "host_key": "ssh:dgomezm@100.123.234.20:22",
+      "label": "dgomezm@100.123.234.20:22",
+      "kind": "ssh",
+      "state": "ok",
+      "checked_at": "2026-11-10T12:30:05Z"
+    },
+    {
+      "host_key": "ssh:root@198.51.100.7:22",
+      "label": "root@198.51.100.7:22",
+      "kind": "ssh",
+      "state": "boveda_cerrada",
+      "checked_at": "2026-11-10T12:30:06Z"
+    }
+  ],
+  "windows": [
+    {
+      "workspace_id": "11111111-1111-4111-8111-111111111111",
+      "workspace": "PROYECTOS",
+      "terminal_id": "a1111111-1111-4111-8111-111111111111",
+      "window": "uniconnect",
+      "host_key": "local",
+      "tmux_session": "uc-8f3c2a9e5b1d4e6f8a7b9c0d1e2f3a4b",
+      "state": "ok",
+      "agent": {
+        "provider": "claude",
+        "display_name": "Claude Code",
+        "as_root": false
+      },
+      "account": {
+        "email": "dev@notbetting.com",
+        "method": "oauth",
+        "plan": "Ultra",
+        "organization": "dev@notbetting.com's Organization",
+        "os_user": "danielgomezmartin",
+        "config": "/Users/danielgomezmartin/.claude.json",
+        "read_at": "2026-11-10T12:30:04Z"
+      }
+    },
+    {
+      "workspace_id": "11111111-1111-4111-8111-111111111111",
+      "workspace": "PROYECTOS",
+      "terminal_id": "a2222222-2222-4222-8222-222222222222",
+      "window": "impuestos",
+      "host_key": "local",
+      "tmux_session": "uc-0a1b2c3d4e5f60718293a4b5c6d7e8f9",
+      "state": "ok",
+      "agent": {
+        "provider": "codex",
+        "display_name": "Codex",
+        "as_root": false
+      },
+      "account": {
+        "email": "subs@iberiavo.com",
+        "method": "chatgpt",
+        "plan": "Pro",
+        "organization": null,
+        "os_user": "danielgomezmartin",
+        "config": "/Users/danielgomezmartin/.codex/auth.json",
+        "read_at": "2026-11-10T12:30:04Z"
+      }
+    },
+    {
+      "workspace_id": "11111111-1111-4111-8111-111111111111",
+      "workspace": "PROYECTOS",
+      "terminal_id": "a3333333-3333-4333-8333-333333333333",
+      "window": "zsh",
+      "host_key": "local",
+      "tmux_session": "uc-ffeeddccbbaa99887766554433221100",
+      "state": "sin_ia",
+      "agent": null,
+      "account": null
+    },
+    {
+      "workspace_id": "22222222-2222-4222-8222-222222222222",
+      "workspace": "NOTBETTING",
+      "terminal_id": "b1111111-1111-4111-8111-111111111111",
+      "window": "APP 2",
+      "host_key": "ssh:root@203.0.113.10:22",
+      "tmux_session": "claudefixerrors_2",
+      "state": "ok",
+      "agent": {
+        "provider": "claude",
+        "display_name": "Claude Code",
+        "as_root": true
+      },
+      "account": {
+        "email": "dev@notbetting.com",
+        "method": "oauth",
+        "plan": "Ultra",
+        "organization": "dev@notbetting.com's Organization",
+        "os_user": "root",
+        "config": "/root/.claude.json",
+        "read_at": "2026-11-10T12:30:05Z"
+      }
+    },
+    {
+      "workspace_id": "22222222-2222-4222-8222-222222222222",
+      "workspace": "NOTBETTING",
+      "terminal_id": "b2222222-2222-4222-8222-222222222222",
+      "window": "vieja",
+      "host_key": "ssh:root@203.0.113.10:22",
+      "tmux_session": "claudevieja",
+      "state": "sesion_no_viva",
+      "agent": null,
+      "account": null
+    },
+    {
+      "workspace_id": "33333333-3333-4333-8333-333333333333",
+      "workspace": "NOLEAKOS",
+      "terminal_id": "c1111111-1111-4111-8111-111111111111",
+      "window": "codex-antiresell",
+      "host_key": "ssh:root@178.105.40.42:22",
+      "tmux_session": "codex-antiresell",
+      "state": "ok",
+      "agent": {
+        "provider": "codex",
+        "display_name": "Codex",
+        "as_root": true
+      },
+      "account": {
+        "email": "it@iberiavo.com",
+        "method": "chatgpt",
+        "plan": "Pro",
+        "organization": null,
+        "os_user": "root",
+        "config": "/root/.codex/auth.json",
+        "read_at": "2026-11-10T12:30:05Z"
+      }
+    },
+    {
+      "workspace_id": "33333333-3333-4333-8333-333333333333",
+      "workspace": "NOLEAKOS",
+      "terminal_id": "c2222222-2222-4222-8222-222222222222",
+      "window": "bot noleakos",
+      "host_key": "ssh:root@178.105.40.42:22",
+      "tmux_session": "bot",
+      "state": "sin_sesion",
+      "agent": {
+        "provider": "claude",
+        "display_name": "Claude Code",
+        "as_root": false
+      },
+      "account": {
+        "email": null,
+        "method": null,
+        "plan": null,
+        "organization": null,
+        "os_user": "noleakos",
+        "config": "/home/noleakos/.claude.json",
+        "read_at": "2026-11-10T12:30:05Z"
+      }
+    },
+    {
+      "workspace_id": "44444444-4444-4444-8444-444444444444",
+      "workspace": "IBERIAVO-PREPRO",
+      "terminal_id": "d1111111-1111-4111-8111-111111111111",
+      "window": "iberiavochatbot",
+      "host_key": "ssh:ec2-user@54.167.34.64:22",
+      "tmux_session": "iberiavochatbot",
+      "state": "host_inaccesible",
+      "agent": null,
+      "account": null
+    },
+    {
+      "workspace_id": "55555555-5555-4555-8555-555555555555",
+      "workspace": "MINIPC",
+      "terminal_id": "e1111111-1111-4111-8111-111111111111",
+      "window": "claudefix (root)",
+      "host_key": "ssh:dgomezm@100.123.234.20:22",
+      "tmux_session": "uc-root-fix",
+      "state": "no_legible",
+      "agent": {
+        "provider": "claude",
+        "display_name": "Claude Code",
+        "as_root": true
+      },
+      "account": {
+        "email": null,
+        "method": null,
+        "plan": null,
+        "organization": null,
+        "os_user": "root",
+        "config": "/root/.claude.json",
+        "read_at": "2026-11-10T12:30:05Z"
+      }
+    },
+    {
+      "workspace_id": "55555555-5555-4555-8555-555555555555",
+      "workspace": "MINIPC",
+      "terminal_id": "e2222222-2222-4222-8222-222222222222",
+      "window": "agy",
+      "host_key": "ssh:dgomezm@100.123.234.20:22",
+      "tmux_session": "agy",
+      "state": "desconocida",
+      "agent": {
+        "provider": "agy",
+        "display_name": "Antigravity",
+        "as_root": false
+      },
+      "account": {
+        "email": null,
+        "method": null,
+        "plan": null,
+        "organization": null,
+        "os_user": "dgomezm",
+        "config": null,
+        "read_at": "2026-11-10T12:30:05Z"
+      }
+    },
+    {
+      "workspace_id": "55555555-5555-4555-8555-555555555555",
+      "workspace": "MINIPC",
+      "terminal_id": "e3333333-3333-4333-8333-333333333333",
+      "window": "antigua",
+      "host_key": "ssh:dgomezm@100.123.234.20:22",
+      "tmux_session": null,
+      "state": "sin_tmux",
+      "agent": null,
+      "account": null
+    },
+    {
+      "workspace_id": "66666666-6666-4666-8666-666666666666",
+      "workspace": "CLIENTE",
+      "terminal_id": "f1111111-1111-4111-8111-111111111111",
+      "window": "api",
+      "host_key": "ssh:root@198.51.100.7:22",
+      "tmux_session": "api",
+      "state": "host_inaccesible",
+      "agent": null,
+      "account": null
+    }
+  ]
+}

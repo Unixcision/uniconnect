@@ -1,0 +1,12 @@
+{
+  "descripcion": "Color de cada cuenta, igual en Mac, Linux y Android. indice = FNV-1a de 32 bits (base 0x811c9dc5, primo 0x01000193, por byte: h = (h XOR byte) * primo mod 2^32) sobre los bytes UTF-8 del email en minusculas, mod 8. Sin email (sin sesion, no legible, clave de API...) se usa 'neutro'.",
+  "colores": ["#EB5757", "#F2994A", "#27AE60", "#2F80ED", "#9B51E0", "#00A3A3", "#C9A227", "#E05BA8"],
+  "neutro": "#8E8E93",
+  "ejemplos": {
+    "dev@notbetting.com": 3,
+    "it@iberiavo.com": 2,
+    "subs@iberiavo.com": 4,
+    "3xaclaude@gmail.com": 2,
+    "Dev@NotBetting.com": 3
+  }
+}

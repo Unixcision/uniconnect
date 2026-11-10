@@ -1,0 +1,18 @@
+{
+  "invalid_params": {
+    "cuando": "workspace_id viene y no es un texto no vacío.",
+    "mensaje": "El espacio de trabajo pedido no es válido."
+  },
+  "not_found": {
+    "cuando": "workspace_id no existe en este equipo.",
+    "mensaje": "No se encontró ese espacio de trabajo."
+  },
+  "locked": {
+    "cuando": "La app está bloqueada.",
+    "mensaje": "UniConnect está bloqueado."
+  },
+  "method_not_found": {
+    "cuando": "Equipo antiguo, sin accounts.v1. Android no llega a llamar: sin la capacidad no enseña la entrada.",
+    "mensaje": "Este equipo todavía no enseña las cuentas de sus IA."
+  }
+}

@@ -1,0 +1,411 @@
+{
+  "descripcion": "Casos de account_of (contracts/accounts-v1, §2). Cada caso: proveedor, uid del proceso, su entorno ya filtrado (rutas con su valor, secretos como true; null = no se pudo leer), el usuario (nombre, home) y los ficheros que existen ({estado: ok|denied|invalid, json}); los demás no existen. 'NO-SALE' marca valores que jamás pueden aparecer en la salida.",
+  "read_at": "2026-11-10T12:30:04Z",
+  "casos": [
+    {
+      "nombre": "claude_oauth_root",
+      "provider": "claude",
+      "uid": 0,
+      "entorno": {
+        "HOME": "/root"
+      },
+      "usuario": [
+        "root",
+        "/root"
+      ],
+      "ficheros": {
+        "/root/.claude.json": {
+          "estado": "ok",
+          "json": {
+            "oauthAccount": {
+              "emailAddress": "Dev@NotBetting.com",
+              "organizationName": "dev@notbetting.com's Organization",
+              "planDisplayName": "Ultra",
+              "organizationType": "claude_max",
+              "accountUuid": "no-sale"
+            },
+            "numStartups": 9
+          }
+        }
+      },
+      "espera": {
+        "state": "ok",
+        "email": "dev@notbetting.com",
+        "method": "oauth",
+        "plan": "Ultra",
+        "organization": "dev@notbetting.com's Organization",
+        "os_user": "root",
+        "config": "/root/.claude.json",
+        "read_at": "2026-11-10T12:30:04Z"
+      }
+    },
+    {
+      "nombre": "claude_config_dir_manda_sobre_home",
+      "provider": "claude",
+      "uid": 1000,
+      "entorno": {
+        "HOME": "/home/ana",
+        "CLAUDE_CONFIG_DIR": "/srv/claude-b"
+      },
+      "usuario": [
+        "ana",
+        "/home/ana"
+      ],
+      "ficheros": {
+        "/home/ana/.claude.json": {
+          "estado": "ok",
+          "json": {
+            "oauthAccount": {
+              "emailAddress": "otra@x.com"
+            }
+          }
+        },
+        "/srv/claude-b/.claude.json": {
+          "estado": "ok",
+          "json": {
+            "oauthAccount": {
+              "emailAddress": "b@x.com",
+              "organizationType": "claude_pro"
+            }
+          }
+        }
+      },
+      "espera": {
+        "state": "ok",
+        "email": "b@x.com",
+        "method": "oauth",
+        "plan": "Pro",
+        "organization": null,
+        "os_user": "ana",
+        "config": "/srv/claude-b/.claude.json",
+        "read_at": "2026-11-10T12:30:04Z"
+      }
+    },
+    {
+      "nombre": "claude_plan_de_credentials_sin_tokens",
+      "provider": "claude",
+      "uid": 1000,
+      "entorno": {
+        "HOME": "/home/ana"
+      },
+      "usuario": [
+        "ana",
+        "/home/ana"
+      ],
+      "ficheros": {
+        "/home/ana/.claude.json": {
+          "estado": "ok",
+          "json": {
+            "oauthAccount": {
+              "emailAddress": "ana@x.com"
+            }
+          }
+        },
+        "/home/ana/.claude/.credentials.json": {
+          "estado": "ok",
+          "json": {
+            "claudeAiOauth": {
+              "accessToken": "NO-SALE",
+              "refreshToken": "NO-SALE",
+              "subscriptionType": "max"
+            }
+          }
+        }
+      },
+      "espera": {
+        "state": "ok",
+        "email": "ana@x.com",
+        "method": "oauth",
+        "plan": "Max",
+        "organization": null,
+        "os_user": "ana",
+        "config": "/home/ana/.claude.json",
+        "read_at": "2026-11-10T12:30:04Z"
+      }
+    },
+    {
+      "nombre": "claude_entorno_ilegible_usa_home_del_usuario",
+      "provider": "claude",
+      "uid": 1001,
+      "entorno": null,
+      "usuario": [
+        "noleakos",
+        "/home/noleakos"
+      ],
+      "ficheros": {
+        "/home/noleakos/.claude.json": {
+          "estado": "ok",
+          "json": {
+            "oauthAccount": {
+              "emailAddress": "3xaclaude@gmail.com"
+            }
+          }
+        }
+      },
+      "espera": {
+        "state": "ok",
+        "email": "3xaclaude@gmail.com",
+        "method": "oauth",
+        "plan": null,
+        "organization": null,
+        "os_user": "noleakos",
+        "config": "/home/noleakos/.claude.json",
+        "read_at": "2026-11-10T12:30:04Z"
+      }
+    },
+    {
+      "nombre": "claude_sin_sesion",
+      "provider": "claude",
+      "uid": 0,
+      "entorno": {
+        "HOME": "/root"
+      },
+      "usuario": [
+        "root",
+        "/root"
+      ],
+      "ficheros": {
+        "/root/.claude.json": {
+          "estado": "ok",
+          "json": {
+            "numStartups": 3
+          }
+        }
+      },
+      "espera": {
+        "state": "sin_sesion",
+        "email": null,
+        "method": null,
+        "plan": null,
+        "organization": null,
+        "os_user": "root",
+        "config": "/root/.claude.json",
+        "read_at": "2026-11-10T12:30:04Z"
+      }
+    },
+    {
+      "nombre": "claude_sin_fichero_sin_sesion",
+      "provider": "claude",
+      "uid": 0,
+      "entorno": {
+        "HOME": "/root"
+      },
+      "usuario": [
+        "root",
+        "/root"
+      ],
+      "ficheros": {},
+      "espera": {
+        "state": "sin_sesion",
+        "email": null,
+        "method": null,
+        "plan": null,
+        "organization": null,
+        "os_user": "root",
+        "config": "/root/.claude.json",
+        "read_at": "2026-11-10T12:30:04Z"
+      }
+    },
+    {
+      "nombre": "claude_clave_de_api",
+      "provider": "claude",
+      "uid": 0,
+      "entorno": {
+        "HOME": "/root",
+        "ANTHROPIC_API_KEY": true
+      },
+      "usuario": [
+        "root",
+        "/root"
+      ],
+      "ficheros": {
+        "/root/.claude.json": {
+          "estado": "ok",
+          "json": {}
+        }
+      },
+      "espera": {
+        "state": "ok",
+        "email": null,
+        "method": "api_key",
+        "plan": null,
+        "organization": null,
+        "os_user": "root",
+        "config": "/root/.claude.json",
+        "read_at": "2026-11-10T12:30:04Z"
+      }
+    },
+    {
+      "nombre": "claude_bedrock",
+      "provider": "claude",
+      "uid": 0,
+      "entorno": {
+        "HOME": "/root",
+        "CLAUDE_CODE_USE_BEDROCK": "1"
+      },
+      "usuario": [
+        "root",
+        "/root"
+      ],
+      "ficheros": {
+        "/root/.claude.json": {
+          "estado": "ok",
+          "json": {
+            "oauthAccount": {
+              "emailAddress": "no@cuenta.com"
+            }
+          }
+        }
+      },
+      "espera": {
+        "state": "ok",
+        "email": null,
+        "method": "bedrock",
+        "plan": null,
+        "organization": null,
+        "os_user": "root",
+        "config": null,
+        "read_at": "2026-11-10T12:30:04Z"
+      }
+    },
+    {
+      "nombre": "claude_de_root_leida_por_otro_usuario",
+      "provider": "claude",
+      "uid": 0,
+      "entorno": null,
+      "usuario": [
+        "root",
+        "/root"
+      ],
+      "ficheros": {
+        "/root/.claude.json": {
+          "estado": "denied"
+        }
+      },
+      "espera": {
+        "state": "no_legible",
+        "email": null,
+        "method": null,
+        "plan": null,
+        "organization": null,
+        "os_user": "root",
+        "config": "/root/.claude.json",
+        "read_at": "2026-11-10T12:30:04Z"
+      }
+    },
+    {
+      "nombre": "codex_chatgpt",
+      "provider": "codex",
+      "uid": 0,
+      "entorno": {
+        "HOME": "/root"
+      },
+      "usuario": [
+        "root",
+        "/root"
+      ],
+      "ficheros": {
+        "/root/.codex/auth.json": {
+          "estado": "ok",
+          "json": {
+            "OPENAI_API_KEY": null,
+            "auth_mode": "chatgpt",
+            "tokens": {
+              "id_token": "eyJhbGciOiJub25lIn0.eyJlbWFpbCI6IklUQGliZXJpYXZvLmNvbSIsImh0dHBzOi8vYXBpLm9wZW5haS5jb20vYXV0aCI6eyJjaGF0Z3B0X3BsYW5fdHlwZSI6InBybyJ9fQ.firma",
+              "access_token": "NO-SALE",
+              "refresh_token": "NO-SALE"
+            }
+          }
+        }
+      },
+      "espera": {
+        "state": "ok",
+        "email": "it@iberiavo.com",
+        "method": "chatgpt",
+        "plan": "Pro",
+        "organization": null,
+        "os_user": "root",
+        "config": "/root/.codex/auth.json",
+        "read_at": "2026-11-10T12:30:04Z"
+      }
+    },
+    {
+      "nombre": "codex_codex_home",
+      "provider": "codex",
+      "uid": 1000,
+      "entorno": {
+        "HOME": "/home/ana",
+        "CODEX_HOME": "/srv/codex"
+      },
+      "usuario": [
+        "ana",
+        "/home/ana"
+      ],
+      "ficheros": {
+        "/srv/codex/auth.json": {
+          "estado": "ok",
+          "json": {
+            "OPENAI_API_KEY": "NO-SALE",
+            "tokens": null
+          }
+        }
+      },
+      "espera": {
+        "state": "ok",
+        "email": null,
+        "method": "api_key",
+        "plan": null,
+        "organization": null,
+        "os_user": "ana",
+        "config": "/srv/codex/auth.json",
+        "read_at": "2026-11-10T12:30:04Z"
+      }
+    },
+    {
+      "nombre": "codex_sin_sesion",
+      "provider": "codex",
+      "uid": 0,
+      "entorno": {
+        "HOME": "/root"
+      },
+      "usuario": [
+        "root",
+        "/root"
+      ],
+      "ficheros": {},
+      "espera": {
+        "state": "sin_sesion",
+        "email": null,
+        "method": null,
+        "plan": null,
+        "organization": null,
+        "os_user": "root",
+        "config": "/root/.codex/auth.json",
+        "read_at": "2026-11-10T12:30:04Z"
+      }
+    },
+    {
+      "nombre": "agy_desconocida",
+      "provider": "agy",
+      "uid": 0,
+      "entorno": {
+        "HOME": "/root"
+      },
+      "usuario": [
+        "root",
+        "/root"
+      ],
+      "ficheros": {},
+      "espera": {
+        "state": "desconocida",
+        "email": null,
+        "method": null,
+        "plan": null,
+        "organization": null,
+        "os_user": "root",
+        "config": null,
+        "read_at": "2026-11-10T12:30:04Z"
+      }
+    }
+  ]
+}
