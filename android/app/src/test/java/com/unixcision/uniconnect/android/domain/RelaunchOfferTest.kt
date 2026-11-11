@@ -46,11 +46,13 @@ class RelaunchOfferTest {
         }
     }
 
-    @Test fun `el Mac relanza Claude tambien por SSH, pero no Codex`() {
-        // Desde el 10-11 el Mac relanza las ventanas SSH con el trabajador de Linux (fila macos).
+    @Test fun `el Mac relanza Claude y Codex por SSH, pero no Antigravity`() {
+        // Desde el 10-11 el Mac relanza las ventanas SSH con el trabajador de Linux (fila macos);
+        // Codex por SSH entró con 19d9d1c14c, tras la prueba en vivo en NOTBETTING.
         val mac = snapshot(matrix.getJSONObject("capacidades").getJSONArray("macos").strings())
         assertTrue(mac.relaunchesWindow(isSSH = true, provider = "claude"))
-        assertFalse(mac.relaunchesWindow(isSSH = true, provider = "codex"))
+        assertTrue(mac.relaunchesWindow(isSSH = true, provider = "codex"))
+        assertFalse(mac.relaunchesWindow(isSSH = true, provider = "agy"))
         // Sin saber qué IA corre, se ofrece: hay alguna de ese tipo y el plan decide.
         assertTrue(mac.relaunchesWindow(isSSH = true, provider = null))
         assertTrue(mac.relaunchesWindow(isSSH = false, provider = null))

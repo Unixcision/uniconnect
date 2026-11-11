@@ -373,7 +373,7 @@ RPCs, in the order one transfer uses them:
 
 - `mobile.file.begin {workspace_id, terminal_id?, name, size, mime?}` →
   `{transfer_id, chunk_bytes}`. `chunk_bytes` ≤ 1048576 (1 MiB raw is 1.4 MiB in
-  base64, under the 8 MiB frame limit). Limits: `size` ≤ 200 MiB; the host
+  base64, under the 8 MiB frame limit). Limits: `size` ≤ 2 GiB; the host
   sanitises `name` (no paths, no odd characters). The host binds the `transfer_id`
   to the authenticated device (the mobile session's identity) and to the box and
   credential revision captured here, and reserves the final name at once (a
@@ -429,7 +429,7 @@ Host side on macOS (2026-09-09, `MobileFilePutService` actor in `Sources/Mobile/
   record as resolved at that moment. Every chunk, commit and abort recomputes the
   binding from the live box and compares it: a different device, a missing box, an
   edited or unresolvable credential → `not_found`. A locked app answers `locked` to
-  all four RPCs. `chunk_bytes` is 1 MiB; `size` above 200 MiB → `too_large`.
+  all four RPCs. `chunk_bytes` is 1 MiB; `size` above 2 GiB → `too_large`. The SSH hop gets 100 s + 1 s per 4 MiB of the file, and the phone waits that plus 20 s for the commit.
 - **Reservation.** `begin` creates `~/UniConnect/Entrada/<YYYYMMDD>/<name>.part` with
   an exclusive create, choosing the first ordinal whose final name and `.part` are
   both free (`name`, `name-2`, `name-3`…), so concurrent uploads of the same name get

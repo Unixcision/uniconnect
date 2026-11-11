@@ -122,4 +122,13 @@ class FilePutTransferTest {
 
         fun received(): ByteArray = chunks.fold(ByteArray(0)) { acc, (_, bytes) -> acc + bytes }
     }
+
+    @Test
+    fun commitWaitGrowsWithTheFileAndCoversTheHostBudget() {
+        assertEquals(120_000L, FilePutTransfer.commitDeadlineMillis(0))
+        assertEquals(170_000L, FilePutTransfer.commitDeadlineMillis(200L * 1024 * 1024))
+        assertEquals(632_000L, FilePutTransfer.commitDeadlineMillis(FilePutTransfer.MAX_SIZE_BYTES))
+        assertEquals(121_000L, FilePutTransfer.commitDeadlineMillis(1))
+        assertEquals(2L * 1024 * 1024 * 1024, FilePutTransfer.MAX_SIZE_BYTES)
+    }
 }

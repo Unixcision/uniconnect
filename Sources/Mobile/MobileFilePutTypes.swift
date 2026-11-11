@@ -74,7 +74,7 @@ enum MobileFilePutError: Error, Equatable, Sendable {
         case let .invalidParams(message), let .ioFailed(message):
             return message
         case .tooLarge:
-            return String(localized: "uniconnect.mobile.file.tooLarge", defaultValue: "El archivo supera el tamaño máximo (200 MiB).")
+            return String(localized: "uniconnect.mobile.file.tooLarge", defaultValue: "El archivo supera el tamaño máximo (2 GiB).")
         case .notFound:
             return String(localized: "uniconnect.mobile.file.notFound", defaultValue: "No se encontró la transferencia.")
         }

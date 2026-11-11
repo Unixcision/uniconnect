@@ -14,7 +14,8 @@ actor MobileFilePutService {
     /// Bytes crudos por trozo que se anuncian en `begin`.
     static let chunkBytes = 1_048_576
     /// Tamaño máximo anunciable.
-    static let maximumSize = 200 * 1_048_576
+    /// 2 GiB (Dani, 11-11-2026: grabaciones de reuniones de ~700 MB no cabían en 200 MiB).
+    static let maximumSize = 2 * 1_073_741_824
     /// Caducidad sin trozos.
     static let defaultExpiry: Duration = .seconds(600)
 
@@ -38,7 +39,7 @@ actor MobileFilePutService {
     private let remoteCopier: any MobileFileRemoteCopying
     private let clock: any Clock<Duration>
     private let expiry: Duration
-    private let remoteTimeout: TimeInterval
+    private let remoteTimeout: TimeInterval?
     private let now: @Sendable () -> Date
     private var transfers: [UUID: Transfer] = [:]
 
@@ -48,7 +49,8 @@ actor MobileFilePutService {
     ///   - remoteCopier: Salto SSH; los tests inyectan uno falso.
     ///   - clock: Reloj de la caducidad.
     ///   - expiry: Tiempo sin trozos tras el que la transferencia se borra.
-    ///   - remoteTimeout: Plazo del salto SSH (el móvil espera 120 s al commit).
+    ///   - remoteTimeout: Plazo fijo del salto SSH; `nil` (lo normal) lo calcula por tamaño con
+    ///     ``remoteBudget(forSize:)``. El móvil espera ese plazo más 20 s al commit.
     ///   - now: Fecha para la carpeta del día.
     init(
         baseDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
@@ -58,7 +60,7 @@ actor MobileFilePutService {
         remoteCopier: any MobileFileRemoteCopying = MobileFileSSHCopier(),
         clock: any Clock<Duration> = ContinuousClock(),
         expiry: Duration = MobileFilePutService.defaultExpiry,
-        remoteTimeout: TimeInterval = 100,
+        remoteTimeout: TimeInterval? = nil,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.baseDirectory = baseDirectory
@@ -68,6 +70,15 @@ actor MobileFilePutService {
         self.expiry = expiry
         self.remoteTimeout = remoteTimeout
         self.now = now
+    }
+
+    /// Plazo del salto SSH para un archivo de `size` bytes: 100 s más 1 s por cada 4 MiB.
+    ///
+    /// Con el tope de 2 GiB son 612 s. Linux usa la misma regla (`remote_budget_seconds`) y el
+    /// móvil espera este plazo más 20 s al commit.
+    static func remoteBudget(forSize size: Int) -> TimeInterval {
+        let perSecond = 4 * 1_048_576
+        return 100 + TimeInterval((max(0, size) + perSecond - 1) / perSecond)
     }
 
     /// Ligadura de una transferencia viva, para que el host la recalcule antes de cada trozo.
@@ -189,7 +200,7 @@ actor MobileFilePutService {
             localURL: finalURL,
             name: transfer.name,
             credentialRecord: credentialRecord,
-            timeout: remoteTimeout
+            timeout: remoteTimeout ?? Self.remoteBudget(forSize: transfer.declaredSize)
         ) {
         case let .copied(remotePath):
             return MobileFilePutCommit(path: finalURL.path, location: .remote, remotePath: remotePath)

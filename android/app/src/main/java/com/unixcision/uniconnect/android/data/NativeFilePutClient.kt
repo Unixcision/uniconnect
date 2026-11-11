@@ -25,11 +25,15 @@ class NativeFilePutClient(private val rpc: FramedRpcClient) : FilePutClient {
      * any failed call, so an abort after a refused chunk travels on a session [reopen] gives.
      */
     internal class RpcFilePutSession(private val session: FramedRpcSession, private val reopen: (suspend () -> FramedRpcSession)? = null) : FilePutSession {
+        /** The size announced at begin, per transfer: the commit waits longer for bigger files. */
+        private val sizes = mutableMapOf<String, Long>()
+
         override suspend fun begin(workspaceID: String, terminalID: String?, name: String, size: Long, mime: String?): FilePutTicket {
             val params = JSONObject().put("workspace_id", workspaceID).put("name", name).put("size", size)
             terminalID?.let { params.put("terminal_id", it) }
             mime?.let { params.put("mime", it) }
             val result = call("mobile.file.begin", params)
+            sizes[result.getString("transfer_id")] = size
             return FilePutTicket(result.getString("transfer_id"), result.optInt("chunk_bytes", FilePutTransfer.MAX_CHUNK_BYTES).coerceIn(1, FilePutTransfer.MAX_CHUNK_BYTES))
         }
 
@@ -40,7 +44,8 @@ class NativeFilePutClient(private val rpc: FramedRpcClient) : FilePutClient {
         }
 
         override suspend fun commit(transferID: String, sha256: String): FilePutOutcome {
-            val result = call("mobile.file.commit", JSONObject().put("transfer_id", transferID).put("sha256", sha256), deadlineMillis = COMMIT_DEADLINE_MILLIS)
+            val deadline = FilePutTransfer.commitDeadlineMillis(sizes[transferID] ?: 0)
+            val result = call("mobile.file.commit", JSONObject().put("transfer_id", transferID).put("sha256", sha256), deadlineMillis = deadline)
             return FilePutOutcome(
                 path = result.getString("path"),
                 location = if (result.optString("location") == "remote") FilePutLocation.REMOTE else FilePutLocation.HOST,
@@ -67,7 +72,5 @@ class NativeFilePutClient(private val rpc: FramedRpcClient) : FilePutClient {
         /** A chunk crosses the tailnet at whatever speed the phone has; a minute covers 1 MiB at a slow 20 KB/s. */
         const val CHUNK_DEADLINE_MILLIS = 60_000L
 
-        /** The commit may carry an scp to the SSH server, which takes as long as that copy does. */
-        const val COMMIT_DEADLINE_MILLIS = 120_000L
     }
 }

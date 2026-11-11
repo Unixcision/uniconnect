@@ -37811,7 +37811,7 @@
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "El archivo supera el tamaño máximo (200 MiB)."
+            "value": "El archivo supera el tamaño máximo (2 GiB)."
           }
         }
       }

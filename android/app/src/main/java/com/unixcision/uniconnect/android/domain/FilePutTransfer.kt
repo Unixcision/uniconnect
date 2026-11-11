@@ -15,8 +15,22 @@ object FilePutTransfer {
     /** The contract's ceiling for one chunk; a host asking for more is cut down to it. */
     const val MAX_CHUNK_BYTES = 1024 * 1024
 
-    /** The contract's ceiling for one file; checked before anything is sent. */
-    const val MAX_SIZE_BYTES = 200L * 1024 * 1024
+    /** The contract's ceiling for one file (2 GiB since 11-11-2026); checked before anything is sent. */
+    const val MAX_SIZE_BYTES = 2L * 1024 * 1024 * 1024
+
+    /** The host's SSH hop gets 100 s plus 1 s per this many bytes of the file (Mac and Linux alike). */
+    private const val REMOTE_BYTES_PER_SECOND = 4L * 1024 * 1024
+
+    /**
+     * How long to wait for `mobile.file.commit` of a [size]-byte file: the host's SSH budget
+     * (100 s + 1 s per 4 MiB) plus 20 s, so the phone never gives up before the host answers.
+     * 120 s for an empty file, 170 s at 200 MiB and 632 s at the 2 GiB ceiling.
+     */
+    fun commitDeadlineMillis(size: Long): Long {
+        val bytes = size.coerceAtLeast(0)
+        val budgetSeconds = 100 + (bytes + REMOTE_BYTES_PER_SECOND - 1) / REMOTE_BYTES_PER_SECOND
+        return (budgetSeconds + 20) * 1000
+    }
 
     /**
      * Sends [size] bytes read from [open] as [name] into [workspaceID] (and [terminalID] when the
@@ -35,7 +49,7 @@ object FilePutTransfer {
         open: () -> InputStream,
         onProgress: (Long) -> Unit,
     ): FilePutOutcome {
-        if (size > MAX_SIZE_BYTES) throw MachineFailure.Rejected("too_large", "el archivo supera los 200 MiB del contrato")
+        if (size > MAX_SIZE_BYTES) throw MachineFailure.Rejected("too_large", "el archivo supera los 2 GiB del contrato")
         val ticket = session.begin(workspaceID, terminalID, name, size, mime)
         val chunkBytes = ticket.chunkBytes.coerceIn(1, MAX_CHUNK_BYTES)
         try {

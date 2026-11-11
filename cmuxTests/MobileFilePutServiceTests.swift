@@ -342,4 +342,13 @@ struct MobileFilePutServiceTests {
         let parts = try FileManager.default.contentsOfDirectory(atPath: base.appendingPathComponent(MobileFilePutService.dayFolder(for: Date())).path)
         #expect(parts.isEmpty)
     }
+
+    @Test("tope de 2 GiB y salto SSH de 100 s más 1 s por cada 4 MiB, como Linux y el móvil")
+    func remoteBudgetGrowsWithTheFile() {
+        #expect(MobileFilePutService.maximumSize == 2 * 1_073_741_824)
+        #expect(MobileFilePutService.remoteBudget(forSize: 0) == 100)
+        #expect(MobileFilePutService.remoteBudget(forSize: 1) == 101)
+        #expect(MobileFilePutService.remoteBudget(forSize: 200 * 1_048_576) == 150)
+        #expect(MobileFilePutService.remoteBudget(forSize: MobileFilePutService.maximumSize) == 612)
+    }
 }

@@ -325,6 +325,32 @@ class RemoteInboxTests(unittest.TestCase):
         inbox.copy(SSHCommand.parse("ssh dani@example.com"), Path("/tmp/x/a.bin"), "a.bin")
         self.assertEqual(calls, [("run", 100.0), ("sftp", 100.0 - 30 - RemoteInbox.CLOSE_MARGIN)])
 
+    def test_ssh_budget_grows_with_the_file_size(self):
+        from uniconnect.file_put import MAX_SIZE, remote_budget_seconds
+        self.assertEqual(MAX_SIZE, 2 * 1024 * 1024 * 1024)
+        self.assertEqual(remote_budget_seconds(0), 100.0)
+        self.assertEqual(remote_budget_seconds(1), 101.0)
+        self.assertEqual(remote_budget_seconds(200 * 1024 * 1024), 150.0)
+        self.assertEqual(remote_budget_seconds(MAX_SIZE), 612.0)
+        calls = []
+        def transport(command, **_):
+            def run(script, *, timeout, **options):
+                calls.append(("run", timeout))
+                return types.SimpleNamespace(stdout="UC_DIR\t/home/dani/uniconnect-entrada\n")
+            return types.SimpleNamespace(run=run)
+        class Transfer:
+            def __init__(self, command, *, timeout):
+                calls.append(("sftp", timeout))
+            def put(self, local_path, directory, name):
+                return directory + "/" + name
+        with tempfile.TemporaryDirectory(prefix="uc-fileput-size-") as directory:
+            video = Path(directory) / "reunion.mp4"
+            with open(video, "wb") as handle:
+                handle.truncate(700 * 1024 * 1024)  # disperso: no ocupa disco
+            inbox = RemoteInbox(transport_factory=transport, transfer_factory=Transfer, clock=lambda: 0.0)
+            inbox.copy(SSHCommand.parse("ssh dani@example.com"), video, "reunion.mp4")
+        self.assertEqual(calls, [("run", 275.0), ("sftp", 275.0 - RemoteInbox.CLOSE_MARGIN)])
+
     def test_exhausted_budget_answers_host_before_the_phone_gives_up(self):
         with tempfile.TemporaryDirectory(prefix="uc-fileput-budget-") as directory:
             now = [5000.0]
@@ -447,7 +473,7 @@ class RPCTests(unittest.TestCase):
         self.assertEqual(self.error("file.begin", {"workspace_id": "local", "name": 5, "size": 1}), "invalid_params")
         self.assertEqual(self.error("file.begin", {"workspace_id": "local", "name": "a", "size": "1"}), "invalid_params")
         self.assertEqual(self.error("file.begin", {"workspace_id": "local", "name": "a", "size": 1, "mime": "x\n"}), "invalid_params")
-        self.assertEqual(self.error("file.begin", {"workspace_id": "local", "name": "a", "size": 300 * 1024 * 1024}), "too_large")
+        self.assertEqual(self.error("file.begin", {"workspace_id": "local", "name": "a", "size": 3 * 1024 * 1024 * 1024}), "too_large")
         self.assertEqual(self.error("file.begin", {"workspace_id": "missing", "name": "a", "size": 1}), "not_found")
         self.assertEqual(self.error("file.begin", {"workspace_id": "local", "name": "a", "size": 1, "terminal_id": "nope"}), "not_found")
         self.assertEqual(self.error("file.begin", {"name": "a", "size": 1}), "invalid_params")

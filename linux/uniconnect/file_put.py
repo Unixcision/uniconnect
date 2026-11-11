@@ -28,12 +28,21 @@ from .transfers import SFTPTransfer
 from .transport import SSHCommand, Transport, TransportError
 
 CHUNK_BYTES = 1024 * 1024
-MAX_SIZE = 200 * 1024 * 1024
+MAX_SIZE = 2 * 1024 * 1024 * 1024  # 2 GiB (Dani, 11-11-2026: grabaciones de reuniones de ~700 MB)
 MAX_NAME_CHARS = 120
 MAX_NAME_BYTES = 200
 EXPIRY_SECONDS = 600
 SWEEP_SECONDS = 60
 REMOTE_BUDGET_SECONDS = 100
+REMOTE_BYTES_PER_SECOND = 4 * 1024 * 1024  # 1 s más de plazo por cada 4 MiB del archivo
+
+
+def remote_budget_seconds(size: int) -> float:
+    """Plazo del salto SSH para un archivo de `size` bytes: 100 s más 1 s por cada 4 MiB.
+
+    Con el tope de 2 GiB son 612 s. El móvil espera al commit este plazo más 20 s.
+    """
+    return float(REMOTE_BUDGET_SECONDS + -(-max(0, int(size)) // REMOTE_BYTES_PER_SECOND))
 MAX_SUFFIX = 1000
 
 _EXTENSION = re.compile(r"\.([A-Za-z0-9]{1,15})$")
@@ -355,20 +364,27 @@ class RemoteInbox:
     Usa la misma conexión validada que la caja (sin credenciales en argv) y el
     cliente SFTP existente: nombre temporal oculto y renombrado sin sobrescribir.
     Preparar la carpeta, transferir y cerrar comparten un único presupuesto
-    monotónico (`budget`, 100 s): el móvil abandona el commit a los 120 s y el
-    host debe responder antes, con `location: "host"` si el plazo se agotó.
+    monotónico: `budget` si se fija, y si no `remote_budget_seconds(tamaño)`
+    (100 s + 1 s por cada 4 MiB). El móvil espera ese plazo más 20 s, así que el
+    host responde antes, con `location: "host"` si el plazo se agotó.
     """
 
     DIRECTORY = "uniconnect-entrada"
     CLOSE_MARGIN = 8.0  # Limpieza del temporal (3 s) y cierre del proceso sftp (≤ 4 s).
 
     def __init__(self, *, transport_factory=Transport, transfer_factory=SFTPTransfer,
-                 budget: float = REMOTE_BUDGET_SECONDS, clock: Callable[[], float] = time.monotonic):
+                 budget: float | None = None, clock: Callable[[], float] = time.monotonic):
         self.transport_factory, self.transfer_factory = transport_factory, transfer_factory
         self.budget, self.clock = budget, clock
 
     def copy(self, command: SSHCommand, local_path: Path, name: str) -> str:
-        deadline = self.clock() + self.budget
+        budget = self.budget
+        if budget is None:
+            try:
+                budget = remote_budget_seconds(Path(local_path).stat().st_size)
+            except OSError:
+                budget = float(REMOTE_BUDGET_SECONDS)
+        deadline = self.clock() + budget
         script = ('umask 077; mkdir -p -- "$HOME/uniconnect-entrada" || exit 74; '
                   'printf \'UC_DIR\\t%s\\n\' "$HOME/uniconnect-entrada"')
         output = self.transport_factory(command).run(script, timeout=max(1.0, deadline - self.clock())).stdout
