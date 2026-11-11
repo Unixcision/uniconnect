@@ -272,8 +272,12 @@ Nada de lo que sigue cambia las fases, el token ni el escalado de arriba.
 
 ### Para los dos verbos: lo que se guarda y se devuelve
 - **Identidad de la ficha.** `~/.claude/sessions/<pid>.json` solo vale si su `procStart` coincide
-  con el arranque del proceso: campo 22 de `/proc/<pid>/stat` en Linux; en el Mac, `startedAt` frente
-  al arranque del proceso, con ±2 s. Si no coincide, `identidad_ambigua`. En el MINIPC había fichas
+  con el arranque del proceso: en Linux, el campo 22 de `/proc/<pid>/stat`. En el Mac, la fecha que
+  imprime Claude («Wed Nov 11 20:41:31 2026», en UTC y al segundo), entre 2 s antes y 3 s después del
+  arranque del kernel. Sin `procStart` legible, `startedAt` vale si cae entre 2 s antes y 120 s
+  después: Claude lo escribe al terminar de arrancar, y con servidores MCP lentos llegó 19,6 s tarde
+  (GYM DATOS, 11-11-2026), lo que con la regla antigua de ±2 s daba un falso «identidad ambigua».
+  Si no coincide, `identidad_ambigua`. En el MINIPC había fichas
   de otro arranque con el PID reutilizado, y una decía ser la conversación de otra ventana.
 - **Conversación compartida.** Si dos procesos Claude vivos del mismo usuario tienen el mismo
   `sessionId`, se excluyen los dos con `conversacion_compartida`. Al reanudar se abre la rama más

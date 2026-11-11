@@ -18,11 +18,15 @@ public struct AgentClaudeSessionFile: Sendable, Equatable, Decodable {
     /// The Claude Code version that wrote the file.
     public let version: String?
     /// The process start time as Claude printed it, used to tell a recycled pid apart.
-    public let procStart: String?
-    /// When the process started, in milliseconds since 1970, as Claude wrote it (`startedAt`).
     ///
-    /// On the Mac this is what proves the file belongs to **this** process and not to an earlier
-    /// one whose pid was reused: see ``matchesProcessStart(_:tolerance:)``.
+    /// On the Mac it reads like `ps -o lstart` in UTC (`Wed Nov 11 20:41:31 2026`), to the second;
+    /// on Linux it is field 22 of `/proc/<pid>/stat`. See ``matchesProcessStart(_:tolerance:)``.
+    public let procStart: String?
+    /// When Claude started this session, in milliseconds since 1970 (`startedAt`).
+    ///
+    /// It is written once Claude has finished starting, so it can trail the process start by tens
+    /// of seconds when MCP servers are slow (19.6 s measured on 11-11-2026). It is only the
+    /// fallback proof when ``procStart`` is missing or unreadable.
     public let startedAt: Double?
     /// The pid Claude wrote inside the file, `nil` in older files that do not carry it.
     ///
@@ -66,18 +70,51 @@ public struct AgentClaudeSessionFile: Sendable, Equatable, Decodable {
         pid.map { $0 == processID } ?? true
     }
 
-    /// Whether the file was written by a process that started at `processStart`, within `tolerance`.
+    /// Whether the file was written by a process that started at `processStart`.
     ///
-    /// A file without `startedAt` proves nothing and does not match: in the MINIPC some files came
-    /// from an earlier boot with the pid reused, and one claimed another window's conversation.
+    /// The proof is ``procStart``, the start Claude printed, to the second: the kernel's start must
+    /// fall within `tolerance` of it (plus the second it was truncated to), read as UTC (how Claude
+    /// prints it on the Mac) or as local time. Without a readable ``procStart``, ``startedAt`` must fall between `tolerance` before
+    /// the start and ``slowStartAllowance`` after it, because Claude writes it once it has started.
+    /// A file with neither proves nothing and does not match: in the MINIPC some files came from an
+    /// earlier boot with the pid reused, and one claimed another window's conversation.
     ///
     /// - Parameters:
     ///   - processStart: When the live process started, from the kernel.
-    ///   - tolerance: The largest accepted difference, 2 s by contract.
-    /// - Returns: `true` when the two start times agree.
+    ///   - tolerance: The largest accepted difference with the printed start, 2 s by contract.
+    /// - Returns: `true` when the file belongs to the process that started at `processStart`.
     public func matchesProcessStart(_ processStart: Date, tolerance: TimeInterval = 2) -> Bool {
+        let start = processStart.timeIntervalSince1970
+        if let procStart {
+            let candidates = Self.printedStarts(procStart)
+            if !candidates.isEmpty {
+                // Printed to the second: the real start is up to 1 s after the printed one.
+                return candidates.contains { printed in
+                    let gap = start - printed.timeIntervalSince1970
+                    return gap >= -tolerance && gap <= 1 + tolerance
+                }
+            }
+        }
         guard let startedAt else { return false }
-        return abs(startedAt / 1000 - processStart.timeIntervalSince1970) <= tolerance
+        let delay = startedAt / 1000 - start
+        return delay >= -tolerance && delay <= Self.slowStartAllowance
+    }
+
+    /// The longest Claude may take from the process start to writing ``startedAt``.
+    public static let slowStartAllowance: TimeInterval = 120
+
+    /// ``procStart`` read as UTC and as local time (`EEE MMM d HH:mm:ss yyyy`), or empty when it
+    /// is not a printed date (Linux writes a jiffies count instead).
+    static func printedStarts(_ text: String) -> [Date] {
+        let normalized = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        return [TimeZone(identifier: "UTC"), TimeZone.current].compactMap { zone -> Date? in
+            guard let zone else { return nil }
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = zone
+            formatter.dateFormat = "EEE MMM d HH:mm:ss yyyy"
+            return formatter.date(from: normalized)
+        }
     }
 
     private enum CodingKeys: String, CodingKey {
