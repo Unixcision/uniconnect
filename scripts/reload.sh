@@ -622,6 +622,13 @@ XCODEBUILD_ARGS=(
   -configuration Debug
   -destination 'platform=macOS'
 )
+if [[ -n "${CMUX_BUILD_JOBS:-}" ]]; then
+  if ! [[ "$CMUX_BUILD_JOBS" =~ ^[1-9][0-9]*$ ]]; then
+    echo "CMUX_BUILD_JOBS debe ser un entero positivo" >&2
+    exit 1
+  fi
+  XCODEBUILD_ARGS+=(-jobs "$CMUX_BUILD_JOBS")
+fi
 if [[ -n "$DERIVED_DATA" ]]; then
   XCODEBUILD_ARGS+=(-derivedDataPath "$DERIVED_DATA")
 fi

@@ -3021,8 +3021,10 @@ enum SessionPersistenceStore {
         fallbackCreatedAt: TimeInterval
     ) -> SessionWorkspaceSnapshot {
         var sanitized = workspace
-        sanitized.panels = sanitized.panels.map(sanitizedPanelConnectionMaterialForPersistence)
-        guard let unsafeProfile = workspace.uniConnect else { return sanitized }
+        guard let unsafeProfile = workspace.uniConnect else {
+            sanitized.panels = sanitized.panels.map(sanitizedPanelConnectionMaterialForPersistence)
+            return sanitized
+        }
         let profile = sanitizedProfileForPersistence(
             unsafeProfile,
             localRootCandidate: workspace.currentDirectory

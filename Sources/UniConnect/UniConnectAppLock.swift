@@ -77,6 +77,8 @@ final class UniConnectAppLock: ObservableObject {
     @Published private(set) var isAuthenticating = false
 
     private var lockWindows: [NSWindow] = []
+    private var coveredWindowLevels: [(window: NSWindow, level: NSWindow.Level)] = []
+    private let terminate: @MainActor () -> Void
     private var isLaunchGate = false
     /// How long the system panel may stay unanswered before the attempt is withdrawn. A panel
     /// that timed out, or opened on another screen, never reports back; without this deadline
@@ -147,7 +149,15 @@ final class UniConnectAppLock: ObservableObject {
         return persistedOverride ?? true
     }
 
-    private init() {}
+    init(terminate: @escaping @MainActor () -> Void = {
+        if let appDelegate = AppDelegate.shared {
+            appDelegate.terminateWithoutQuitWarning()
+        } else {
+            NSApp.terminate(nil)
+        }
+    }) {
+        self.terminate = terminate
+    }
 
     /// Called at launch. Presents the lock and authenticates immediately.
     func presentLaunchGate() {
@@ -174,15 +184,19 @@ final class UniConnectAppLock: ObservableObject {
         isLocked = true
         onLock?()
         lastError = nil
+        Self.dismissTransientPopUpWindows(NSApp.windows)
         // Keep terminal content out of screen recordings / captures while locked.
         for window in NSApp.windows where !(window is UniConnectLockWindow) {
             window.sharingType = .none
+            if window.level > .normal {
+                coveredWindowLevels.append((window, window.level))
+                window.level = .normal
+            }
         }
         guard presentsWindows else { return }
         // `.popUpMenu` panels sit above a floating lock cover. Dismiss them
         // synchronously before creating the cover so no completion menu or other
         // transient app content can remain readable over the locked application.
-        Self.dismissTransientPopUpWindows(NSApp.windows)
         showLockWindows()
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -339,6 +353,9 @@ final class UniConnectAppLock: ObservableObject {
             // Bounded, cancellable deadline: a system panel that disappears gives no signal.
             try? await Task.sleep(for: deadline)
             guard !Task.isCancelled, let self, self.authenticationAttempt == attempt, self.isAuthenticating else { return }
+            // LAContext may still deliver a completion after invalidation. Retire the
+            // attempt first so that neither a late success nor cancellation changes this screen.
+            self.authenticationAttempt += 1
             self.authenticator.cancelPending()
             self.isAuthenticating = false
             self.lastError = String(
@@ -372,11 +389,12 @@ final class UniConnectAppLock: ObservableObject {
     /// the lock window, which covers every screen, so it could not be seen and its app-modal
     /// session swallowed every click on the lock screen.
     func quitFromLockScreen() {
-        if let appDelegate = AppDelegate.shared {
-            appDelegate.terminateWithoutQuitWarning()
-        } else {
-            NSApp.terminate(nil)
-        }
+        authenticationAttempt += 1
+        authenticationAwaitsActivation = false
+        authenticationDeadlineTask?.cancel()
+        authenticator.cancelPending()
+        isAuthenticating = false
+        terminate()
     }
 
     /// One-off authentication for sensitive actions (import, revealing a command).
@@ -414,8 +432,8 @@ final class UniConnectAppLock: ObservableObject {
     private func applicationBecameActive() {
         guard isLocked else { return }
         for window in lockWindows {
-            window.level = .floating
-            window.orderFrontRegardless()
+            window.level = .normal
+            window.orderFront(nil)
         }
         lockWindows.first?.makeKey()
         if authenticationAwaitsActivation {
@@ -424,14 +442,14 @@ final class UniConnectAppLock: ObservableObject {
     }
 
     private func applicationResignedActive() {
-        guard isLocked, !isAuthenticating else { return }
+        guard isLocked else { return }
         matchCoverToActivation()
     }
 
-    /// Floating while UniConnect is active; otherwise only over UniConnect's own windows.
+    /// The cover is an ordinary app window, never a desktop-wide floating shield.
     private func matchCoverToActivation() {
         guard isLocked, presentsWindows else { return }
-        let level: NSWindow.Level = NSApp.isActive ? .floating : .normal
+        let level: NSWindow.Level = .normal
         for window in lockWindows where window.level != level {
             window.level = level
         }
@@ -449,6 +467,7 @@ final class UniConnectAppLock: ObservableObject {
             window.orderOut(nil)
         }
         lockWindows.removeAll()
+        restoreCoveredWindowLevels()
         for window in NSApp.windows where !(window is UniConnectLockWindow) {
             window.sharingType = .readOnly
         }
@@ -467,10 +486,9 @@ final class UniConnectAppLock: ObservableObject {
                 backing: .buffered,
                 defer: false
             )
-            // Above the app's own windows, but below the system Touch ID dialog (a screen-saver
-            // level window would hide the sensor prompt in full screen). Only while UniConnect is
-            // the active app: otherwise it would cover every other app too (10-nov-2026).
-            window.level = NSApp.isActive ? .floating : .normal
+            // A normal-level cover lets other applications and system dialogs stay usable,
+            // even if authentication or this app's main thread stops responding.
+            window.level = .normal
             window.isOpaque = true
             window.backgroundColor = NSColor(calibratedRed: 0.06, green: 0.06, blue: 0.08, alpha: 1)
             window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
@@ -483,6 +501,11 @@ final class UniConnectAppLock: ObservableObject {
         }
     }
 
+    private func restoreCoveredWindowLevels() {
+        for entry in coveredWindowLevels { entry.window.level = entry.level }
+        coveredWindowLevels.removeAll()
+    }
+
 #if DEBUG
     /// Restores singleton state between tests without exposing a Release bypass.
     func resetForTesting() {
@@ -493,6 +516,7 @@ final class UniConnectAppLock: ObservableObject {
             window.close()
         }
         lockWindows.removeAll()
+        restoreCoveredWindowLevels()
         for window in NSApp.windows where !(window is UniConnectLockWindow) {
             window.sharingType = .readOnly
         }
@@ -552,30 +576,17 @@ struct UniConnectLockView: View {
                     .frame(maxWidth: 520)
             }
             HStack(spacing: 16) {
-                Button {
-                    lock.authenticate()
-                } label: {
-                    Label(
-                        String(localized: "uniconnect.lock.action.unlock", defaultValue: "Unlock"),
-                        systemImage: "touchid"
-                    )
-                        .font(.system(size: 17, weight: .semibold, design: .rounded))
-                        .padding(.horizontal, 22)
-                        .padding(.vertical, 10)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(Color(red: 0.95, green: 0.3, blue: 0.4))
-                .keyboardShortcut(.defaultAction)
-
-                Button {
-                    lock.quitFromLockScreen()
-                } label: {
-                    Text(String(localized: "uniconnect.lock.action.quit", defaultValue: "Quit"))
-                        .font(.system(size: 17, weight: .medium, design: .rounded))
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 10)
-                }
-                .buttonStyle(.bordered)
+                UniConnectLockActionButton(
+                    title: String(localized: "uniconnect.lock.action.unlock", defaultValue: "Desbloquear"),
+                    prominent: true,
+                    action: { lock.authenticate() }
+                )
+                .frame(width: 200, height: 48)
+                UniConnectLockActionButton(
+                    title: String(localized: "uniconnect.lock.action.quit", defaultValue: "Salir"),
+                    action: { lock.quitFromLockScreen() }
+                )
+                .frame(width: 100, height: 48)
             }
             Spacer()
             Text(String(
@@ -587,8 +598,9 @@ struct UniConnectLockView: View {
                 .padding(.bottom, 40)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .contentShape(Rectangle())
-        .onTapGesture { lock.authenticate() }
+        .background {
+            Color.clear.contentShape(Rectangle()).onTapGesture { lock.authenticate() }
+        }
     }
 }
 

@@ -23,7 +23,7 @@ public struct AgentResumeArgv: Sendable, Equatable {
 
     /// Creates a resume-argv builder using the bundled cross-platform command catalogue.
     public init() {
-        let bundled = try? AgentResumeCatalog()
+        let bundled = try? AgentResumeCatalog.bundled.get()
         catalog = bundled
         trustCatalog = bundled
     }
@@ -34,7 +34,7 @@ public struct AgentResumeArgv: Sendable, Equatable {
     /// - Throws: A decoding or schema error when the catalogue is invalid.
     public init(catalogData: Data) throws {
         catalog = try AgentResumeCatalog(data: catalogData)
-        trustCatalog = try? AgentResumeCatalog()
+        trustCatalog = try? AgentResumeCatalog.bundled.get()
     }
 
     /// The result of resolving a cmux wrapper launcher (the `claude-teams` / `codex-teams` / `omo`

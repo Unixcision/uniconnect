@@ -25,6 +25,33 @@ class PersistenceTests(unittest.TestCase):
         self.store = StateStore(self.root, self.vault, clock=lambda: self.now)
         self.importer = Importer(self.vault)
 
+    def test_unchanged_autosave_preserves_disk_but_still_detects_concurrent_writers(self):
+        self.store.save()
+        state = self.store.path.read_bytes()
+        tree = (self.root / "agent-tree.json").read_bytes()
+        self.now += 8
+        with patch("uniconnect.state.atomic_write", wraps=atomic_write) as write:
+            self.store.save()
+            write.assert_not_called()
+        self.assertEqual(self.store.path.read_bytes(), state)
+        self.assertEqual((self.root / "agent-tree.json").read_bytes(), tree)
+        other = StateStore(self.root, self.vault, clock=lambda: self.now)
+        other.data["settings"]["fontSize"] = 18
+        other.save()
+        with self.assertRaises(StateError):
+            self.store.save()
+
+    def test_unchanged_autosave_still_creates_due_backup_and_repairs_missing_tree(self):
+        self.store.save()
+        self.assertEqual(len(self.store.backups()), 1)
+        (self.root / "agent-tree.json").unlink()
+        self.now += 8
+        self.store.save()
+        self.assertTrue((self.root / "agent-tree.json").is_file())
+        self.now += 6 * 3600
+        self.store.save()
+        self.assertEqual(len(self.store.backups()), 2)
+
     def document(self):
         return {"version": 2, "workspaces": [{"name": "Project", "kind": "ssh", "cwd": "/project",
                 "connect": "sshpass -p 'password never in a preview' ssh -i /private/key user@example.test",

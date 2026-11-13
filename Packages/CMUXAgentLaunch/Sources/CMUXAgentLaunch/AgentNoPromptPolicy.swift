@@ -26,7 +26,7 @@ public struct AgentNoPromptPolicy: Sendable, Equatable {
     ///
     /// - Throws: An error when the catalogue is missing from the deployment or its schema is invalid.
     public init() throws {
-        try self.init(locator: AgentResumeResourceLocator())
+        catalog = try AgentResumeCatalog.bundled.get()
     }
 
     /// Loads the policy from the catalogue a locator finds.

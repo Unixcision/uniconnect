@@ -186,6 +186,14 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
         conversation(id: latestConversationID)
     }
 
+    /// Automatic title refreshes and their timestamps do not change recovery identity.
+    func hasSameRecoveryState(as previous: Self) -> Bool {
+        var comparable = self
+        comparable.visibleName = previous.visibleName
+        comparable.updatedAt = previous.updatedAt
+        return comparable == previous
+    }
+
     /// Prepares a saved window for a new runtime without changing its conversation or folder.
     /// Only restoration calls this: decoding or saving an active legacy PTY must not rebind it.
     func preparingRestoredRuntime(panelID: UUID, bundleIdentifier: String) -> Self {

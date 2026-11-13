@@ -39,6 +39,8 @@ actor UniConnectRecoveryBackupRepository {
     private let policy: UniConnectRecoveryBackupPolicy
     private let fileManager: FileManager
     private let fileWriter: FileWriter
+    private var scheduledArchiveInFlight = false
+    private var scheduledCheck: (checkedAt: Date, validUntil: Date)?
 
     init(
         rootDirectory: URL = UniConnectRecoveryBackupRepository.defaultRootDirectory(),
@@ -86,6 +88,27 @@ actor UniConnectRecoveryBackupRepository {
         encryptedVault: Data?,
         now: Date = Date()
     ) throws -> Entry? {
+        guard try scheduledBackupIsDue(now: now) else { return nil }
+        return try archive(snapshot: snapshot, encryptedVault: encryptedVault, reason: .scheduled, now: now)
+    }
+
+    /// Loads credential material only when an archive is due, never for ordinary autosaves.
+    @discardableResult
+    func archiveIfDue(
+        snapshot: AppSessionSnapshot,
+        now: Date = Date(),
+        loadEncryptedVault: @Sendable () async throws -> Data?
+    ) async throws -> Entry? {
+        guard !scheduledArchiveInFlight, try scheduledBackupIsDue(now: now) else { return nil }
+        scheduledArchiveInFlight = true
+        defer { scheduledArchiveInFlight = false }
+        let encryptedVault = try await loadEncryptedVault()
+        // Another explicit archive may have been written while the provider suspended.
+        return try archiveIfDue(snapshot: snapshot, encryptedVault: encryptedVault, now: now)
+    }
+
+    private func scheduledBackupIsDue(now: Date) throws -> Bool {
+        if let check = scheduledCheck, now >= check.checkedAt, now < check.validUntil { return false }
         let current = try discoveredEntries()
         let lastScheduledAt = current
             // A wall-clock correction must not let a future-dated archive suppress
@@ -95,14 +118,14 @@ actor UniConnectRecoveryBackupRepository {
             .max()
         guard policy.isScheduledBackupDue(lastScheduledAt: lastScheduledAt, now: now) else {
             try prune(entries: current, now: now)
-            return nil
+            // Recheck external deletion and retention at most once a minute. Clock rollback
+            // bypasses the cache, and the actual due time is never delayed by this bound.
+            let due = (lastScheduledAt ?? now).addingTimeInterval(policy.interval)
+            scheduledCheck = (now, min(due, now.addingTimeInterval(60)))
+            return false
         }
-        return try archive(
-            snapshot: snapshot,
-            encryptedVault: encryptedVault,
-            reason: .scheduled,
-            now: now
-        )
+        scheduledCheck = nil
+        return true
     }
 
     @discardableResult
@@ -112,6 +135,7 @@ actor UniConnectRecoveryBackupRepository {
         reason: Reason,
         now: Date = Date()
     ) throws -> Entry {
+        scheduledCheck = nil
         guard Self.everySSHWorkspaceHasCredentialReference(in: snapshot) else {
             throw UniConnectError.missingCredential
         }

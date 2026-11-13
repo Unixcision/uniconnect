@@ -33,7 +33,7 @@ jobs:
         env:
           PYTHONPATH: linux
         run: |
-          for suite in window sidebar state mobile mobile_consent mobile_lazy_surface mobile_pty_rpc first_window mainwindow_copy terminal; do
+          for suite in agent_tree agent_tree_document window sidebar state mobile mobile_consent mobile_lazy_surface mobile_pty_rpc first_window mainwindow_copy terminal; do
             xvfb-run -a linux/.venv/bin/python -m unittest discover -s linux/tests -p "test_${suite}.py" -v || exit 1
           done
       - name: Textos y menús en español

@@ -58,27 +58,22 @@ actor UniConnectLocalTmuxService: UniConnectLocalTmuxInspecting {
         for targets: [UniConnectLocalTmuxRuntimeObservation.Target]
     ) async -> [UniConnectLocalTmuxRuntimeObservation] {
         guard !targets.isEmpty, !Task.isCancelled else { return [] }
+        let sockets = Set(targets.map { $0.owner.binding.socketName })
+        let before = await paneSnapshots(sockets: sockets)
         let processes = processSnapshot()
-        var observations: [UniConnectLocalTmuxRuntimeObservation] = []
+        var pending: [(target: UniConnectLocalTmuxRuntimeObservation.Target,
+                       pane: UniConnectLocalTmuxPaneSnapshot,
+                       root: UniConnectLocalTmuxProcessIdentity,
+                       peer: UniConnectLocalTmuxProcessIdentity,
+                       state: UniConnectLocalTmuxRuntimeObservation.State,
+                       first: AgentDiscoveryPass, generation: UUID?, legacy: UUID?)] = []
         for target in targets {
-            guard !Task.isCancelled else { break }
+            guard !Task.isCancelled else { return [] }
             let owner = target.owner
-            let arguments = [
-                "-N", "-L", owner.binding.socketName, "display-message", "-p", "-t", "=" + owner.binding.name + ":",
-                "#{session_name}\t#{pane_id}\t#{pane_pid}\t#{pane_dead}\t#{pane_current_path}\t#{pane_current_command}",
-            ]
-            guard let before = await commands.runStandardOutput(
-                directory: "/", executable: "tmux", arguments: arguments, timeout: 2
-            ), before.utf8.count <= 8_192 else { continue }
-            let fields = before.trimmingCharacters(in: .newlines)
-                .split(separator: "\t", omittingEmptySubsequences: false)
-            guard fields.count == 6, fields[0] == owner.binding.name, fields[1].hasPrefix("%"),
-                  fields[3] == "0", let rootPID = Int(fields[2]),
-                  let rootIdentity = processIdentity(rootPID) else { continue }
-            let paneDirectory = String(fields[4])
-            // #{pane_pid} is the pane's shell, not the agent: the agent is found in its subtree
-            // with the shared agent-tree.v1 criterion (exactly one provider root).
-            let first = await discoverAgent(rootPID: rootPID, processes: processes, paneDirectory: paneDirectory, openFiles: nil)
+            guard let pane = before[owner.binding.socketName]?[owner.binding.name],
+                  let rootIdentity = processIdentity(pane.processID) else { continue }
+            let first = await discoverAgent(rootPID: pane.processID, processes: processes,
+                                            paneDirectory: pane.directory, openFiles: nil)
             let state: UniConnectLocalTmuxRuntimeObservation.State
             let peer: UniConnectLocalTmuxProcessIdentity
             switch first.outcome {
@@ -94,46 +89,81 @@ actor UniConnectLocalTmuxService: UniConnectLocalTmuxInspecting {
                 peer = rootIdentity
                 state = .ambiguous
             case .noAgent:
-                guard let rootArguments = processArguments(rootPID),
-                      Self.isShell(rootArguments.arguments.first), Self.isShell(String(fields[5])),
-                      isForegroundWithoutChildren(rootPID) else { continue }
+                guard let rootArguments = processArguments(pane.processID),
+                      Self.isShell(rootArguments.arguments.first), Self.isShell(pane.command),
+                      isForegroundWithoutChildren(pane.processID) else { continue }
                 peer = rootIdentity
                 state = .shell
             }
-            // Old panes can predate the root-shell integration environment. Their scoped agent
-            // descendant may repair persistence, but never authorize socket input.
-            let legacyGeneration: UUID?
+            let legacy: UUID?
             switch state {
             case .discovered, .unidentified:
-                legacyGeneration = await legacyRuntimePeerGeneration(root: rootIdentity, peer: peer, owner: owner)
-            default:
-                legacyGeneration = nil
+                legacy = await legacyRuntimePeerGeneration(root: rootIdentity, peer: peer, owner: owner)
+            default: legacy = nil
             }
-            if legacyGeneration == nil {
-                guard await verifiedOwner(of: peer, among: [owner]) == owner else { continue }
-            }
-            guard let after = await commands.runStandardOutput(
-                    directory: "/", executable: "tmux", arguments: arguments, timeout: 2
-                  ), after == before, processIdentity(rootPID) == rootIdentity,
-                  processIdentity(peer.pid) == peer, !Task.isCancelled else { continue }
-            if let legacyGeneration {
-                guard await legacyRuntimePeerGeneration(root: rootIdentity, peer: peer, owner: owner) == legacyGeneration else { continue }
-            }
-            // exec preserves the PID/start timestamp: the identity is derived again from freshly
-            // read argv and session files, and must be the same one.
-            let second = await discoverAgent(
-                rootPID: rootPID, processes: processes, paneDirectory: paneDirectory, openFiles: first.openFiles
-            )
-            guard Self.sameIdentity(first.outcome, second.outcome) else { continue }
-            if case .shell = state {
-                guard let live = processArguments(rootPID), Self.isShell(live.arguments.first),
-                      isForegroundWithoutChildren(rootPID), processIdentity(rootPID) == rootIdentity else { continue }
+            let generation = legacy == nil
+                ? await runtimeGeneration(root: rootIdentity, peer: peer, owner: owner) : nil
+            guard legacy != nil || generation != nil else { continue }
+            pending.append((target, pane, rootIdentity, peer, state, first, generation, legacy))
+        }
+        // Two socket-wide reads bracket discovery. Reusing an old read as the final check would
+        // miss a replaced pane/session; input authorization keeps its independent strict path.
+        let after = await paneSnapshots(sockets: sockets)
+        var observations: [UniConnectLocalTmuxRuntimeObservation] = []
+        for item in pending {
+            let owner = item.target.owner
+            guard !Task.isCancelled,
+                  after[owner.binding.socketName]?[owner.binding.name] == item.pane,
+                  processIdentity(item.root.pid) == item.root,
+                  processIdentity(item.peer.pid) == item.peer else { continue }
+            if let legacy = item.legacy {
+                guard await legacyRuntimePeerGeneration(root: item.root, peer: item.peer, owner: owner) == legacy else { continue }
             } else {
-                guard processIdentity(peer.pid) == peer else { continue }
+                guard await runtimeGeneration(root: item.root, peer: item.peer, owner: owner) == item.generation else { continue }
             }
-            observations.append(.init(target: target, state: state))
+            // exec can keep PID/start time: re-read argv and native identity files, not just PIDs.
+            let second = await discoverAgent(rootPID: item.root.pid, processes: processes,
+                paneDirectory: item.pane.directory, openFiles: item.first.openFiles)
+            guard Self.sameIdentity(item.first.outcome, second.outcome),
+                  processIdentity(item.root.pid) == item.root,
+                  processIdentity(item.peer.pid) == item.peer else { continue }
+            if case .shell = item.state {
+                guard let live = processArguments(item.root.pid), Self.isShell(live.arguments.first),
+                      isForegroundWithoutChildren(item.root.pid) else { continue }
+            }
+            observations.append(.init(target: item.target, state: item.state))
         }
         return observations
+    }
+
+    private func paneSnapshots(sockets: Set<String>) async -> [String: [String: UniConnectLocalTmuxPaneSnapshot]] {
+        var result: [String: [String: UniConnectLocalTmuxPaneSnapshot]] = [:]
+        for socket in sockets.sorted() {
+            guard !Task.isCancelled else { break }
+            if let output = await commands.runStandardOutput(directory: "/", executable: "tmux",
+                arguments: ["-N", "-L", socket, "list-panes", "-a", "-F", UniConnectLocalTmuxPaneSnapshot.format], timeout: 2) {
+                result[socket] = UniConnectLocalTmuxPaneSnapshot.parse(output)
+            }
+        }
+        return result
+    }
+
+    /// Validates ownership against the captured pane; the caller brackets this with fresh tmux
+    /// reads and kernel identity checks. Never used to authorize input to a terminal.
+    private func runtimeGeneration(root: UniConnectLocalTmuxProcessIdentity,
+                                   peer: UniConnectLocalTmuxProcessIdentity,
+                                   owner: UniConnectLocalTmuxOwner) async -> UUID? {
+        guard root.userID == peer.userID, processIdentity(root.pid) == root,
+              processIdentity(peer.pid) == peer,
+              let peerEnvironment = processEnvironment(peer.pid),
+              UUID(uuidString: peerEnvironment["CMUX_WORKSPACE_ID"] ?? "") == owner.workspaceID,
+              UUID(uuidString: peerEnvironment["CMUX_SURFACE_ID"] ?? "") == owner.panelID,
+              let environment = await paneIdentityEnvironment(panePID: root.pid, binding: owner.binding),
+              UUID(uuidString: environment["CMUX_WORKSPACE_ID"] ?? "") == owner.workspaceID,
+              UUID(uuidString: environment["CMUX_SURFACE_ID"] ?? "") == owner.panelID,
+              let generation = UUID(uuidString: environment["UNICONNECT_SURFACE_GENERATION"] ?? ""),
+              peer.pid == root.pid || isProcessDescendant(peer.pid, root.pid) else { return nil }
+        return generation
     }
 
     /// The result of one discovery pass plus the open files it read, reused for re-derivation.
@@ -199,9 +229,7 @@ actor UniConnectLocalTmuxService: UniConnectLocalTmuxInspecting {
         if knownOpenFiles == nil {
             if roots.count == 1, let root = roots.first, root.provider == .codex {
                 // lsof only for the single Codex root and its own branch, never for every pane.
-                for member in discovery.branch(of: root, processes: samples) {
-                    openFiles[member.pid] = await codexRolloutPaths(pid: member.pid)
-                }
+                openFiles = await codexRolloutPaths(pids: discovery.branch(of: root, processes: samples).map(\.pid))
             }
         }
         let outcome = discovery.discover(
@@ -244,18 +272,25 @@ actor UniConnectLocalTmuxService: UniConnectLocalTmuxInspecting {
         return processIdentity(pid)
     }
 
-    /// Codex rollout files one process holds open, read with `lsof -Fn` (read-only).
-    private func codexRolloutPaths(pid: Int) async -> [String] {
+    /// One lsof invocation for the Codex branch, retaining each file's owning process.
+    private func codexRolloutPaths(pids: [Int]) async -> [Int: [String]] {
+        guard !pids.isEmpty else { return [:] }
+        let allowed = Set(pids)
+        var paths = Dictionary(uniqueKeysWithValues: allowed.map { ($0, [String]()) })
         guard let output = await commands.runStandardOutput(
-            directory: "/",
-            executable: "/usr/sbin/lsof",
-            arguments: ["-n", "-P", "-p", String(pid), "-Fn"],
+            directory: "/", executable: "/usr/sbin/lsof",
+            arguments: ["-n", "-P", "-p", allowed.sorted().map(String.init).joined(separator: ","), "-Fpn"],
             timeout: 2
-        ), output.utf8.count <= 4 * 1_024 * 1_024 else { return [] }
-        return output.split(separator: "\n").compactMap { line -> String? in
-            guard line.hasPrefix("n"), line.contains("/.codex/sessions/") else { return nil }
-            return String(line.dropFirst())
+        ), output.utf8.count <= 4 * 1_024 * 1_024 else { return paths }
+        var pid: Int?
+        for line in output.split(separator: "\n") {
+            if line.hasPrefix("p") {
+                pid = Int(line.dropFirst()).flatMap { allowed.contains($0) ? $0 : nil }
+            } else if let pid, line.hasPrefix("n"), line.contains("/.codex/sessions/") {
+                paths[pid, default: []].append(String(line.dropFirst()))
+            }
         }
+        return paths
     }
 
     /// Two passes agree when they name the same agent, conversation and root process.

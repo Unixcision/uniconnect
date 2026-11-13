@@ -591,6 +591,7 @@
 		A5001610 /* SessionPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001611 /* SessionPersistence.swift */; };
 		F5000000A1B2C3D4E5F60718 /* SessionPersistenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5000001A1B2C3D4E5F60718 /* SessionPersistenceTests.swift */; };
 		A5001670 /* SessionRestoredTerminalCommandStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001671 /* SessionRestoredTerminalCommandStore.swift */; };
+		FC310002A1B2C3D4E5F60718 /* SessionSaveCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC310001A1B2C3D4E5F60718 /* SessionSaveCoordinator.swift */; };
 		A50016B1A1B2C3D4E5F60718 /* SessionSnapshotDebugBenchmark.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50016B0A1B2C3D4E5F60718 /* SessionSnapshotDebugBenchmark.swift */; };
 		F5320002A1B2C3D4E5F60718 /* SessionTranscriptTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5320003A1B2C3D4E5F60718 /* SessionTranscriptTypes.swift */; };
 		D10000000000000000A00020 /* SettingsAccountJSONResetBehaviorUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000A00021 /* SettingsAccountJSONResetBehaviorUITests.swift */; };
@@ -864,6 +865,7 @@
 		A90620000000000000000002 /* UniConnectLocalTmuxLaunchPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90610000000000000000002 /* UniConnectLocalTmuxLaunchPlan.swift */; };
 		A855352F3ABE287225321CAB /* UniConnectLocalTmuxLiveIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4BC40A6A46EEC5B8CAAA659 /* UniConnectLocalTmuxLiveIdentity.swift */; };
 		A90620000000000000000005 /* UniConnectLocalTmuxOwner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90610000000000000000005 /* UniConnectLocalTmuxOwner.swift */; };
+		FC310004A1B2C3D4E5F60718 /* UniConnectLocalTmuxPaneSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC310003A1B2C3D4E5F60718 /* UniConnectLocalTmuxPaneSnapshot.swift */; };
 		A90620000000000000000007 /* UniConnectLocalTmuxProcessIdentity+Darwin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90610000000000000000007 /* UniConnectLocalTmuxProcessIdentity+Darwin.swift */; };
 		A90620000000000000000006 /* UniConnectLocalTmuxProcessIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90610000000000000000006 /* UniConnectLocalTmuxProcessIdentity.swift */; };
 		A6092606BB00000000000105 /* UniConnectLocalTmuxRestorePrimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6092606AA00000000000105 /* UniConnectLocalTmuxRestorePrimeTests.swift */; };
@@ -885,6 +887,8 @@
 		D26F20000000000000000010 /* UniConnectLocalWindowRecoveryBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26F10000000000000000010 /* UniConnectLocalWindowRecoveryBanner.swift */; };
 		D26E20000000000000000001 /* UniConnectLocalWindowRuntimeState.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26E10000000000000000001 /* UniConnectLocalWindowRuntimeState.swift */; };
 		D26F20000000000000000004 /* UniConnectLocalWindowTerminalLaunchPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26F10000000000000000004 /* UniConnectLocalWindowTerminalLaunchPlan.swift */; };
+		FC310008A1B2C3D4E5F60718 /* UniConnectLockActionButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC310007A1B2C3D4E5F60718 /* UniConnectLockActionButton.swift */; };
+		FC310006A1B2C3D4E5F60718 /* UniConnectLockButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC310005A1B2C3D4E5F60718 /* UniConnectLockButton.swift */; };
 		C0FFEE1000000000000000B1 /* UniConnectMarkdown.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE1000000000000000A1 /* UniConnectMarkdown.swift */; };
 		D26F40000000000000000002 /* UniConnectMarkdownDetailedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26F30000000000000000002 /* UniConnectMarkdownDetailedTests.swift */; };
 		D27020000000000000000013 /* UniConnectMarkdownParseResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = D27010000000000000000013 /* UniConnectMarkdownParseResult.swift */; };
@@ -1694,6 +1698,7 @@
 		A5001611 /* SessionPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionPersistence.swift; sourceTree = "<group>"; };
 		F5000001A1B2C3D4E5F60718 /* SessionPersistenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionPersistenceTests.swift; sourceTree = "<group>"; };
 		A5001671 /* SessionRestoredTerminalCommandStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRestoredTerminalCommandStore.swift; sourceTree = "<group>"; };
+		FC310001A1B2C3D4E5F60718 /* SessionSaveCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/SessionSaveCoordinator.swift; sourceTree = "<group>"; };
 		A50016B0A1B2C3D4E5F60718 /* SessionSnapshotDebugBenchmark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/SessionSnapshotDebugBenchmark.swift; sourceTree = "<group>"; };
 		F5320003A1B2C3D4E5F60718 /* SessionTranscriptTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionTranscriptTypes.swift; sourceTree = "<group>"; };
 		D10000000000000000A00021 /* SettingsAccountJSONResetBehaviorUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsAccountJSONResetBehaviorUITests.swift; sourceTree = "<group>"; };
@@ -1961,6 +1966,7 @@
 		A90610000000000000000002 /* UniConnectLocalTmuxLaunchPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectLocalTmuxLaunchPlan.swift; sourceTree = "<group>"; };
 		B4BC40A6A46EEC5B8CAAA659 /* UniConnectLocalTmuxLiveIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectLocalTmuxLiveIdentity.swift; sourceTree = "<group>"; };
 		A90610000000000000000005 /* UniConnectLocalTmuxOwner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectLocalTmuxOwner.swift; sourceTree = "<group>"; };
+		FC310003A1B2C3D4E5F60718 /* UniConnectLocalTmuxPaneSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectLocalTmuxPaneSnapshot.swift; sourceTree = "<group>"; };
 		A90610000000000000000007 /* UniConnectLocalTmuxProcessIdentity+Darwin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UniConnectLocalTmuxProcessIdentity+Darwin.swift"; sourceTree = "<group>"; };
 		A90610000000000000000006 /* UniConnectLocalTmuxProcessIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectLocalTmuxProcessIdentity.swift; sourceTree = "<group>"; };
 		A6092606AA00000000000105 /* UniConnectLocalTmuxRestorePrimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectLocalTmuxRestorePrimeTests.swift; sourceTree = "<group>"; };
@@ -1982,6 +1988,8 @@
 		D26F10000000000000000010 /* UniConnectLocalWindowRecoveryBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectLocalWindowRecoveryBanner.swift; sourceTree = "<group>"; };
 		D26E10000000000000000001 /* UniConnectLocalWindowRuntimeState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectLocalWindowRuntimeState.swift; sourceTree = "<group>"; };
 		D26F10000000000000000004 /* UniConnectLocalWindowTerminalLaunchPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectLocalWindowTerminalLaunchPlan.swift; sourceTree = "<group>"; };
+		FC310007A1B2C3D4E5F60718 /* UniConnectLockActionButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectLockActionButton.swift; sourceTree = "<group>"; };
+		FC310005A1B2C3D4E5F60718 /* UniConnectLockButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectLockButton.swift; sourceTree = "<group>"; };
 		C0FFEE1000000000000000A1 /* UniConnectMarkdown.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectMarkdown.swift; sourceTree = "<group>"; };
 		D26F30000000000000000002 /* UniConnectMarkdownDetailedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectMarkdownDetailedTests.swift; sourceTree = "<group>"; };
 		D27010000000000000000013 /* UniConnectMarkdownParseResult.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectMarkdownParseResult.swift; sourceTree = "<group>"; };
@@ -2337,6 +2345,7 @@
 				A90610000000000000000F21 /* UniConnectLocalTmuxServerAgent.swift */,
 				A90610000000000000000003 /* UniConnectLocalTmuxInspecting.swift */,
 				A90610000000000000000004 /* UniConnectLocalTmuxService.swift */,
+				FC310003A1B2C3D4E5F60718 /* UniConnectLocalTmuxPaneSnapshot.swift */,
 				B4BC40A6A46EEC5B8CAAA659 /* UniConnectLocalTmuxLiveIdentity.swift */,
 				EA1BA471D60DC08EB5DF2357 /* UniConnectCoordinator+WindowDetails.swift */,
 				5BE0885A94B4A7EFA3CCFB8F /* UniConnectWindowDetailsView.swift */,
@@ -2452,6 +2461,8 @@
 				F26A01000000000000000012 /* ClaudeBridgeStatus+UniConnectRail.swift */,
 				C0FFEE0300000000000000A1 /* UniConnectBackup.swift */,
 				C0FFEE0400000000000000A1 /* UniConnectAppLock.swift */,
+				FC310005A1B2C3D4E5F60718 /* UniConnectLockButton.swift */,
+				FC310007A1B2C3D4E5F60718 /* UniConnectLockActionButton.swift */,
 				C0FFEE0500000000000000A1 /* UniConnectViews.swift */,
 				F26A01000000000000000001 /* UniConnectChipActions.swift */,
 				F26A01000000000000000002 /* UniConnectChipSnapshot.swift */,
@@ -2820,6 +2831,7 @@
 				A500D011A1B2C3D4E5F60718 /* DebugLogging.swift */,
 				D35B71010000000000000002 /* StartupBreadcrumbLog.swift */,
 				A50016B0A1B2C3D4E5F60718 /* SessionSnapshotDebugBenchmark.swift */,
+				FC310001A1B2C3D4E5F60718 /* SessionSaveCoordinator.swift */,
 				9AD52285508B1D6A9875E7B3 /* SidebarSelectionState.swift */,
 				B9000017A1B2C3D4E5F60719 /* WindowDragHandleView.swift */,
 				A50012F0 /* Backport.swift */,
@@ -4134,6 +4146,7 @@
 				FE003102 /* SessionIndexView.swift in Sources */,
 				A5001610 /* SessionPersistence.swift in Sources */,
 				A5001670 /* SessionRestoredTerminalCommandStore.swift in Sources */,
+				FC310002A1B2C3D4E5F60718 /* SessionSaveCoordinator.swift in Sources */,
 				A50016B1A1B2C3D4E5F60718 /* SessionSnapshotDebugBenchmark.swift in Sources */,
 				F5320002A1B2C3D4E5F60718 /* SessionTranscriptTypes.swift in Sources */,
 				D9CCF002D9CCF002D9CCF002 /* SettingsLazyLoadHelpers.swift in Sources */,
@@ -4340,6 +4353,7 @@
 				A90620000000000000000002 /* UniConnectLocalTmuxLaunchPlan.swift in Sources */,
 				A855352F3ABE287225321CAB /* UniConnectLocalTmuxLiveIdentity.swift in Sources */,
 				A90620000000000000000005 /* UniConnectLocalTmuxOwner.swift in Sources */,
+				FC310004A1B2C3D4E5F60718 /* UniConnectLocalTmuxPaneSnapshot.swift in Sources */,
 				A90620000000000000000007 /* UniConnectLocalTmuxProcessIdentity+Darwin.swift in Sources */,
 				A90620000000000000000006 /* UniConnectLocalTmuxProcessIdentity.swift in Sources */,
 				A6092606BB0000000000000A /* UniConnectLocalTmuxRuntimeObservation.swift in Sources */,
@@ -4355,6 +4369,8 @@
 				D26F20000000000000000010 /* UniConnectLocalWindowRecoveryBanner.swift in Sources */,
 				D26E20000000000000000001 /* UniConnectLocalWindowRuntimeState.swift in Sources */,
 				D26F20000000000000000004 /* UniConnectLocalWindowTerminalLaunchPlan.swift in Sources */,
+				FC310008A1B2C3D4E5F60718 /* UniConnectLockActionButton.swift in Sources */,
+				FC310006A1B2C3D4E5F60718 /* UniConnectLockButton.swift in Sources */,
 				C0FFEE1000000000000000B1 /* UniConnectMarkdown.swift in Sources */,
 				D27020000000000000000013 /* UniConnectMarkdownParseResult.swift in Sources */,
 				D26B20000000000000000034 /* UniConnectMasterKeyMigrationPolicy.swift in Sources */,

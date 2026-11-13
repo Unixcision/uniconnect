@@ -25,7 +25,7 @@ HISTORY_LIMIT = 32
 
 
 class AgentTree:
-    LOCAL_INTERVAL = 8
+    LOCAL_INTERVAL = 30
     SSH_INTERVAL = 60
     PROBE_TIMEOUT = 8
     SAVE_DEADLINE = 10
@@ -129,7 +129,7 @@ class AgentTree:
         return self.open_transport(self.owner, self.transport, key, workspace)
 
     def poll(self, *, force=False):
-        """Lanza las lecturas que tocan (local cada 8 s, SSH cada 60 s); nunca dos por grupo."""
+        """Lanza las lecturas que tocan (local cada 30 s, SSH cada 60 s); nunca dos por grupo."""
         if self.busy():
             return []
         started, now = [], self.clock()

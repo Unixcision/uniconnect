@@ -665,12 +665,14 @@ extension Workspace {
                     return nil
                 }
             }()
-            let resumeStartupInput = Self.surfaceResumeStartupInput(
+            // A metadata-only save never captures or restores scrollback. Avoid resolving
+            // approval files and building a launch command just to discard this result.
+            let resumeStartupInput = includeScrollback ? Self.surfaceResumeStartupInput(
                 resumeBinding,
                 autoResumeAgentSessions: AgentSessionAutoResumeSettings.isEnabled() && (agentWasRunning ?? true),
                 promptForApproval: false
-            )
-            let shouldPersistScrollback = Self.shouldPersistSessionScrollback(
+            ) : nil
+            let shouldPersistScrollback = includeScrollback && Self.shouldPersistSessionScrollback(
                 shellActivityState: panelShellActivityStates[panelId],
                 fallbackNeedsConfirmClose: terminalPanel.needsConfirmClose()
             ) && Self.shouldReplaySessionScrollback(

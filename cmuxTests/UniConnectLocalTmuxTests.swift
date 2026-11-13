@@ -492,10 +492,9 @@ struct UniConnectLocalTmuxTests {
             + (scenario == "ambiguousAgents" ? [runtimeProcess(pid: 235, parentPID: 123, workspace: workspace, panel: panel, foreground: true)] : [])
         let snapshot = CmuxTopProcessSnapshot(processes: processes, sampledAt: Date(), includesProcessDetails: true)
         let cwd = scenario == "differentCWD" ? "/different" : "/tmp"
-        let runtime = "owned\t%2\t123\t0\t\(cwd)\t\(shell ? "zsh" : "claude.exe")\n"
-        let owner = "$1\t%2\t123\t0\towned\n"
+        let runtime = "owned\t%2\t123\t0\t\(cwd)\t\(shell ? "zsh" : "claude.exe")\t$1\t1\t1\n"
         let commands = InspectionCommands(outputs: scenario == "missingTmux" ? [] : [
-            runtime, owner, scenario == "replacedPane" ? "$1\t%3\t123\t0\towned\n" : owner, runtime,
+            runtime, scenario == "replacedPane" ? runtime.replacingOccurrences(of: "%2", with: "%3") : runtime,
         ])
         let inspector = UniConnectLocalTmuxService(
             commands: commands,
@@ -610,6 +609,38 @@ struct UniConnectLocalTmuxTests {
         #expect(await commands.onlyReadExistingOwnedPane())
     }
 
+    @Test func fortyOnePanesUseTwoSocketReadsAndKeepTheirOwnIdentity() async throws {
+        let workspace = UUID(), generation = UUID()
+        let panels = (0..<41).map { _ in UUID() }
+        let targets = try panels.enumerated().map { index, panel in
+            let binding = try #require(UniConnectLocalTmuxBinding(name: "owned-\(index)", socketName: "test-local"))
+            return UniConnectLocalTmuxRuntimeObservation.Target(
+                owner: .init(workspaceID: workspace, panelID: panel, binding: binding, surfaceGeneration: generation),
+                record: .init(id: panel, boxRoot: "/tmp", tmuxBinding: binding))
+        }
+        let rows = panels.indices.map { "owned-\($0)\t%\($0)\t\(1000 + $0)\t0\t/tmp\tzsh\t$\($0)\t1\t1\n" }.joined()
+        let commands = InspectionCommands(outputs: [rows, rows])
+        let processes = CmuxTopProcessSnapshot(processes: panels.indices.map {
+            runtimeProcess(pid: 1000 + $0, parentPID: 1, workspace: workspace, panel: panels[$0], foreground: true)
+        }, sampledAt: Date(), includesProcessDetails: true)
+        let environment: @Sendable (Int) -> [String: String]? = { pid in
+            guard panels.indices.contains(pid - 1000) else { return nil }
+            return ["CMUX_WORKSPACE_ID": workspace.uuidString, "CMUX_SURFACE_ID": panels[pid - 1000].uuidString,
+                    "UNICONNECT_SURFACE_GENERATION": generation.uuidString]
+        }
+        let inspector = UniConnectLocalTmuxService(commands: commands, processEnvironment: environment,
+            processIdentity: { .init(pid: $0, parentPID: 1, userID: 501, startSeconds: 10, startMicroseconds: 0) },
+            isProcessDescendant: { _, _ in false }, processSnapshot: { processes },
+            processArguments: { .init(arguments: ["zsh"], environment: environment($0) ?? [:]) },
+            isForegroundWithoutChildren: { _ in true }, processDirectory: { _ in "/tmp" })
+        let observations = await inspector.runtimeObservations(for: targets)
+        #expect(observations.count == 41)
+        #expect(observations.allSatisfy { $0.state == .shell })
+        #expect(observations.map { $0.target.owner.panelID } == panels)
+        #expect(await commands.requests.count == 2)
+        #expect(await commands.usesOnlyExistingServers())
+    }
+
     private actor LegacyInspectionCommands: CommandRunning {
         let replacedPane: Bool
         let shell: Bool
@@ -622,7 +653,7 @@ struct UniConnectLocalTmuxTests {
             if arguments.last?.contains("#{pane_current_path}") == true {
                 runtimeReads += 1
                 let pane = replacedPane && runtimeReads > 1 ? "%3" : "%2"
-                output = "owned\t\(pane)\t123\t0\t/tmp\t\(shell ? "zsh" : "claude.exe")\n"
+                output = "owned\t\(pane)\t123\t0\t/tmp\t\(shell ? "zsh" : "claude.exe")\t$1\t1\t1\n"
             } else {
                 output = "$1\t%2\t123\t0\towned\n"
             }
@@ -631,7 +662,8 @@ struct UniConnectLocalTmuxTests {
         func onlyReadExistingOwnedPane() -> Bool {
             requests.allSatisfy {
                 $0.first == "-N" && (($0.contains("display-message") && $0.contains("=owned:"))
-                    || ($0.contains("show-environment") && $0.contains("=owned")))
+                    || ($0.contains("show-environment") && $0.contains("=owned"))
+                    || ($0.contains("list-panes") && $0.contains("-a")))
             }
         }
     }

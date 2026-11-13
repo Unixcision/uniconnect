@@ -74,6 +74,8 @@ class StateStore:
         self.data = self.empty()
         self.last_backup_error: str | None = None
         self._disk_revision: str | None = None
+        self._saved_projection: dict | None = None
+        self._scheduled_check: tuple[float, float] | None = None
         self.load()
 
     @staticmethod
@@ -132,6 +134,7 @@ class StateStore:
             return self._load_current()
 
     def _load_current(self) -> dict:
+        self._saved_projection = None
         if not self.path.exists():
             self.data = self.empty()
             self._disk_revision = None
@@ -156,8 +159,9 @@ class StateStore:
     def _save_current(self, scheduled: bool) -> None:
         clean = self._clean(self.data)
         self._validate(clean)
-        clean["savedAt"] = self.clock()
-        encoded = json.dumps(clean, ensure_ascii=False, sort_keys=True, indent=2, allow_nan=False).encode()
+        projection = {key: value for key, value in clean.items() if key != "savedAt"}
+        changed = projection != self._saved_projection
+        clean["savedAt"] = self.clock() if changed else self.data.get("savedAt")
         with storage_lease(self.root), private_lock(self.root / ".state.lock"):
             if self.journal_path.exists() and self._active_transaction is None:
                 raise StateError("A pending workspace transaction must be recovered before saving")
@@ -167,9 +171,13 @@ class StateStore:
                     raise StateError("Workspace state changed in another process; reload before saving")
             elif self._disk_revision is not None:
                 raise StateError("Workspace state disappeared; reload before saving")
-            atomic_write(self.path, encoded)
-            self._disk_revision = hashlib.sha256(encoded).hexdigest()
-            self._write_agent_tree(clean)
+            if changed or not self.path.exists():
+                encoded = json.dumps(clean, ensure_ascii=False, sort_keys=True, indent=2, allow_nan=False).encode()
+                atomic_write(self.path, encoded)
+                self._disk_revision = hashlib.sha256(encoded).hexdigest()
+                self._saved_projection = copy.deepcopy(projection)
+            if changed or getattr(self, "last_tree_error", None) or not (self.root / "agent-tree.json").is_file():
+                self._write_agent_tree(clean)
         # UI action closures retain workspace/window dictionaries between saves.
         # Keep their identity stable; only the on-disk projection is reconstructed.
         self.data["savedAt"] = clean["savedAt"]
@@ -308,6 +316,7 @@ class StateStore:
                 if private_read(self.path) != state_data:
                     raise StateError("State rollback read-back verification failed")
         self._disk_revision = hashlib.sha256(state_data).hexdigest() if state_data is not None else None
+        self._saved_projection = None
         self._restore_model(capsule["model"], references)
 
     def recover_pending_transaction(self) -> str | None:
@@ -567,9 +576,15 @@ class StateStore:
 
     def _checkpoint(self, reason: str) -> Path | None:
         now = self.clock()
+        if reason == "scheduled" and self._scheduled_check is not None:
+            checked, until = self._scheduled_check
+            if checked <= now < until:
+                return None
+        self._scheduled_check = None
         entries = self.backups()
-        scheduled = [entry for entry in entries if entry["reason"] == "scheduled"]
+        scheduled = [entry for entry in entries if entry["reason"] == "scheduled" and entry["createdAt"] <= now]
         if reason == "scheduled" and scheduled and now - scheduled[0]["createdAt"] < 6 * 3600:
+            self._scheduled_check = (now, min(now + 60, scheduled[0]["createdAt"] + 6 * 3600))
             return None
         snapshot = self._clean(copy.deepcopy(self.data))
         self._validate(snapshot)

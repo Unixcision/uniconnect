@@ -43,6 +43,9 @@ final class UniConnectCoordinator: ObservableObject {
     private var sshTargetResolver: (any UniConnectSSHTargetResolving)?
     private var localTmuxInspector: (any UniConnectLocalTmuxInspecting)?
     private var localTmuxReconciliationTask: Task<Void, Never>?
+    private var localTmuxTargetTasks: [UUID: Task<Void, Never>] = [:]
+    private var localTmuxPendingTargets = Set<UUID>()
+    private var lastLocalTmuxReconciliation: ContinuousClock.Instant?
     /// SSH windows' verified agents (UniConnectCoordinator+RemoteAgents); set by the composition root.
     var remoteAgentMonitor: UniConnectRemoteAgentMonitor?
     /// «Cuentas de IA» (UniConnectCoordinator+Accounts); set by the composition root.
@@ -221,7 +224,9 @@ final class UniConnectCoordinator: ObservableObject {
     }
 
     /// Repairs durable runtime state from existing panes without focusing, launching, or sending input.
-    func reconcileLocalTmuxRuntime() async {
+    func reconcileLocalTmuxRuntime(force: Bool = true) async {
+        if !force, let last = lastLocalTmuxReconciliation,
+           last.duration(to: ContinuousClock.now) < .seconds(30) { return }
         if let task = localTmuxReconciliationTask {
             await task.value
             return
@@ -246,6 +251,7 @@ final class UniConnectCoordinator: ObservableObject {
             }
         }
         guard !targets.isEmpty else { return }
+        lastLocalTmuxReconciliation = ContinuousClock.now
         let task = Task { @MainActor [weak self, workspaces, targets] in
             let observations = await inspector.runtimeObservations(for: targets)
             guard let self, !Task.isCancelled else { return }
@@ -328,8 +334,24 @@ final class UniConnectCoordinator: ObservableObject {
         )
     }
 
-    private func scheduleLocalTmuxRuntimeReconciliation() {
-        Task { @MainActor [weak self] in await self?.reconcileLocalTmuxRuntime() }
+    private func scheduleLocalTmuxRuntimeReconciliation(owner: LocalAgentOwner) {
+        localTmuxPendingTargets.insert(owner.panelID)
+        guard localTmuxTargetTasks[owner.panelID] == nil else { return }
+        localTmuxTargetTasks[owner.panelID] = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                self.localTmuxTargetTasks[owner.panelID] = nil
+                self.localTmuxPendingTargets.remove(owner.panelID)
+            }
+            while self.localTmuxPendingTargets.remove(owner.panelID) != nil, !Task.isCancelled {
+                guard let workspace = self.workspace(for: owner.workspaceID),
+                      let target = self.localObservationTarget(panelID: owner.panelID, in: workspace),
+                      let inspector = self.localTmuxInspector else { return }
+                let observations = await inspector.runtimeObservations(for: [target])
+                guard !Task.isCancelled, self.workspace(for: owner.workspaceID) === workspace else { return }
+                for observation in observations { self.applyLocalTmuxObservation(observation, in: workspace) }
+            }
+        }
     }
 
     /// Reuses the injected inspector before a durable pane's socket client is dispatched.
@@ -2073,7 +2095,7 @@ final class UniConnectCoordinator: ObservableObject {
            currentWorkspace.uniConnectLocalWindowsByPanelId[owner.panelID]?.tmuxBinding != nil,
            signal.surfaceGeneration == currentWorkspace.uniConnectSurfaceGeneration(panelId: owner.panelID) {
             // The outer attach shell is not proof that the durable pane's agent exited.
-            scheduleLocalTmuxRuntimeReconciliation()
+            scheduleLocalTmuxRuntimeReconciliation(owner: owner)
             return
         }
         guard let currentWorkspace = workspace(for: owner.workspaceID),
@@ -2151,7 +2173,7 @@ final class UniConnectCoordinator: ObservableObject {
                 let owner = LocalAgentOwner(workspaceID: workspace.id, panelID: panelID)
                 if workspace.uniConnectProfile?.kind == .local,
                    workspace.uniConnectLocalWindowsByPanelId[panelID]?.tmuxBinding != nil {
-                    scheduleLocalTmuxRuntimeReconciliation()
+                    scheduleLocalTmuxRuntimeReconciliation(owner: owner)
                 }
                 guard let attempt = localAgentLaunchAttempts[owner] else { return }
                 handleLocalAgentDelivery(attempt, delivered: true, workspace: workspace)

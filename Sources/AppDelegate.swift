@@ -1141,7 +1141,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             try UniConnectVault.shared.restoreExactEncryptedSnapshot(encryptedVault)
         }
     )
-    private var uniConnectCriticalSaveScheduled = false
+    private lazy var uniConnectCriticalSaveCoordinator = SessionSaveCoordinator { [weak self] in
+        guard let self else { return }
+        let generation = self.nextProcessDetectedSessionSaveGeneration()
+        // Read hook/config files off-main. Only copying live UI/model values belongs on main.
+        let index = await Task.detached(priority: .utility) { RestorableAgentSessionIndex.load() }.value
+        guard !self.isTerminatingApp, !Task.isCancelled,
+              self.isCurrentProcessDetectedSessionSaveGeneration(generation) else { return }
+        _ = self.saveSessionSnapshot(includeScrollback: false, removeWhenEmpty: false, restorableAgentIndex: index)
+    }
     private nonisolated static let launchServicesRegistrationQueue = DispatchQueue(
         label: "com.unixcision.uniconnect.launchServicesRegistration",
         qos: .utility
@@ -1158,6 +1166,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     var shouldDeferInitialMainWindowBootstrapForExternalConfirmation = false
     private var didBootstrapInitialMainWindow = false
     private var isTerminatingApp = false
+    private var lockScreenTerminationTask: Task<Void, Never>?
+    private var didPersistFinalSessionSnapshot = false
     private var transcriptRetentionTask: Task<Void, Never>?
     private var closedWindowHistorySuppressedWindowIds: Set<UUID> = []
 #if DEBUG
@@ -1804,6 +1814,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if UniConnectAppLock.shared.isLocked {
+            guard lockScreenTerminationTask == nil else { return .terminateLater }
+            isTerminatingApp = true
+            uniConnectCriticalSaveCoordinator.cancel()
+            // Process/file discovery must not freeze the lock screen or a system authentication
+            // panel. AppKit keeps servicing events until the final durable snapshot is ready.
+            lockScreenTerminationTask = Task { @MainActor [weak self] in
+                let indexes = await ProcessDetectedResumeIndexes.load()
+                guard let self else { sender.reply(toApplicationShouldTerminate: true); return }
+                self.didPersistFinalSessionSnapshot = self.saveSessionSnapshot(
+                    includeScrollback: true, removeWhenEmpty: false,
+                    restorableAgentIndex: indexes.restorableAgentIndex,
+                    surfaceResumeBindingIndex: indexes.surfaceResumeBindingIndex
+                )
+                ClosedItemHistoryStore.shared.flushPendingSaves()
+                self.closeAllWebInspectorsBeforeAppTeardown()
+                sender.reply(toApplicationShouldTerminate: true)
+            }
+            return .terminateLater
+        }
         let buildFlavor = BuildFlavor.current
         let hasDirtyWorkspaces = hasQuitConfirmationDirtyWorkspaces()
         let confirmQuitMode = QuitWarningSettings.confirmQuitMode()
@@ -1819,7 +1849,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             ]
         )
         isTerminatingApp = true
-        _ = saveSessionSnapshotIncludingProcessDetectedIndexes(includeScrollback: true, removeWhenEmpty: false)
+        didPersistFinalSessionSnapshot = saveSessionSnapshotIncludingProcessDetectedIndexes(includeScrollback: true, removeWhenEmpty: false)
         ClosedItemHistoryStore.shared.flushPendingSaves()
 
         // If the user already confirmed via the Cmd+Q shortcut warning dialog,
@@ -1867,6 +1897,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             } else {
                 // Reset so that the next quit attempt can show the dialog again.
                 self.isTerminatingApp = false
+                self.didPersistFinalSessionSnapshot = false
                 StartupBreadcrumbLog.append("appDelegate.shouldTerminate.reply", fields: ["shouldQuit": "0"])
             }
             NSApp.reply(toApplicationShouldTerminate: shouldQuit)
@@ -1915,7 +1946,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         UniConnectCoordinator.shared.shutdownProcessRunners()
         UniConnectCoordinator.shared.shutdownClaudeBridge()
         closeAllWebInspectorsBeforeAppTeardown()
-        _ = saveSessionSnapshotIncludingProcessDetectedIndexes(includeScrollback: true, removeWhenEmpty: false)
+        if !didPersistFinalSessionSnapshot {
+            _ = saveSessionSnapshotIncludingProcessDetectedIndexes(includeScrollback: true, removeWhenEmpty: false)
+        }
         ClosedItemHistoryStore.shared.flushPendingSaves()
         stopSessionAutosaveTimer()
         CloudVMActionLauncher.shared.terminateAll()
@@ -3983,23 +4016,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         uniConnectRecoveryCoordinator.presentRestorePicker()
     }
 
-    /// Coalesces mutations from the same main-run-loop transaction, then captures
-    /// their final coherent state before the next user event can run.
+    /// Captures the latest durable state at most every two seconds, without starving the UI.
     func uniConnectRequestCriticalSessionSave(reason: String) {
         guard UniConnectCoordinator.isEnabled, !isTerminatingApp else { return }
-#if DEBUG
-        cmuxDebugLog("session.criticalSave.request reason=\(reason)")
-#endif
-        guard !uniConnectCriticalSaveScheduled else { return }
-        uniConnectCriticalSaveScheduled = true
-        DispatchQueue.main.async { [weak self] in
-            guard let self, !self.isTerminatingApp else { return }
-            // Snapshot reconciliation can publish metadata that this very snapshot captures.
-            // Keep those synchronous mutations in the current save, rather than recursively
-            // scheduling another save before the main run loop can process a user event.
-            defer { self.uniConnectCriticalSaveScheduled = false }
-            _ = self.saveSessionSnapshot(includeScrollback: false, removeWhenEmpty: false)
-        }
+        uniConnectCriticalSaveCoordinator.request()
     }
 
     private func installUniConnectPersistenceObserverIfNeeded(for context: MainWindowContext) {
@@ -4036,6 +4056,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             includeScrollback: includeScrollback
         )
         if writeSynchronously {
+            uniConnectCriticalSaveCoordinator.cancel()
             TextBoxInputTextView.flushPendingSessionDraftAttachmentCopies()
         }
 #if DEBUG
@@ -4238,7 +4259,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let fingerprintStart = ProcessInfo.processInfo.systemUptime
 #endif
         let resumeIndexes = await ProcessDetectedResumeIndexes.load()
-        await UniConnectCoordinator.shared.reconcileLocalTmuxRuntime()
+        await UniConnectCoordinator.shared.reconcileLocalTmuxRuntime(force: false)
         // SSH boxes: background probe, at most once a minute per box (never blocks this tick).
         UniConnectCoordinator.shared.refreshRemoteAgentsIfDue(now: now)
         guard !isTerminatingApp,
@@ -4434,16 +4455,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         let recoveryRepository = uniConnectRecoveryRepository
         let shouldArchiveRecovery = UniConnectCoordinator.isEnabled
-        let recoveryVaultResult: Result<Data?, Error>? = snapshot.flatMap { snapshot in
-            guard shouldArchiveRecovery else { return nil }
-            return Result {
-                try UniConnectVault.shared.encryptedSnapshot(
-                    requiring: UniConnectRecoveryBackupRepository.referencedSSHCredentialIDs(
-                        in: snapshot
-                    )
-                )
-            }
-        }
 
         // A final save waits for this serial queue. Posting UserDefaults notifications
         // from an older queued write can wait for main and deadlock that final drain.
@@ -4453,22 +4464,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             if let snapshot {
                 let didSave = SessionPersistenceStore.save(snapshot)
                 if didSave, shouldArchiveRecovery {
-                    switch recoveryVaultResult {
-                    case .success(let encryptedVault):
-                        Task {
-                            do {
-                                _ = try await recoveryRepository.archiveIfDue(
-                                    snapshot: snapshot,
-                                    encryptedVault: encryptedVault
-                                )
-                            } catch {
-                                NSLog("[UniConnect] recovery backup failed: %@", error.localizedDescription)
+                    Task {
+                        do {
+                            _ = try await recoveryRepository.archiveIfDue(snapshot: snapshot) {
+                                try await MainActor.run {
+                                    try UniConnectVault.shared.encryptedSnapshot(
+                                        requiring: UniConnectRecoveryBackupRepository.referencedSSHCredentialIDs(in: snapshot)
+                                    )
+                                }
                             }
+                        } catch {
+                            NSLog("[UniConnect] recovery backup failed: %@", error.localizedDescription)
                         }
-                    case .failure(let error):
-                        NSLog("[UniConnect] recovery backup skipped: %@", error.localizedDescription)
-                    case nil:
-                        break
                     }
                 }
                 return didSave

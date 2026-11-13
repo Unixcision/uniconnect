@@ -29,6 +29,15 @@ on:
       - scripts/ci/xcodebuild_noninteractive.py
       - .github/workflows/uniconnect-macos-rpc.yml
   workflow_dispatch:
+    inputs:
+      performance:
+        description: 'Ejecutar las regresiones de fluidez y bloqueo'
+        type: boolean
+        default: false
+      test_ref:
+        description: 'Revisión a validar (vacío: revisión del flujo)'
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -52,6 +61,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           submodules: recursive
+          ref: ${{ inputs.test_ref || github.sha }}
 
       - name: Comprobar la versión mayor de Xcode del proyecto
         shell: bash
@@ -123,6 +133,7 @@ jobs:
           restore-keys: uniconnect-rpc-spm-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Ejecutar solo la suite de creación y fidelidad móvil
+        if: ${{ !inputs.performance }}
         timeout-minutes: 35
         shell: bash
         run: |
@@ -149,6 +160,7 @@ jobs:
       # A separate runner invocation keeps the process-global controller and AppDelegate
       # isolated from the mobile suite. Reuse the products; do not build the app again.
       - name: Verificar acceso real desde el panel tmux registrado
+        if: ${{ !inputs.performance }}
         timeout-minutes: 5
         shell: bash
         run: |
@@ -170,6 +182,7 @@ jobs:
       # `-only-testing` sobre una suite que no está cableada en el pbxproj informa "Executed 0 tests"
       # y pasa en verde, que es indistinguible de una regresión que nadie comprobó.
       - name: Relanzado — inventario e identidad (y que conste que se ejecutaron)
+        if: ${{ !inputs.performance }}
         timeout-minutes: 5
         shell: bash
         run: |
@@ -202,12 +215,53 @@ jobs:
             --suite UniConnectRelaunchExecutorTests \
             --minimum 21
 
+      - name: Regresiones de guardado, recuperación y tmux
+        if: ${{ inputs.performance }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts/ci/xcodebuild_noninteractive.py \
+            xcodebuild -project cmux.xcodeproj -scheme cmux-unit -configuration Debug \
+            -derivedDataPath "$RUNNER_TEMP/uniconnect-mobile-rpc-dd" \
+            -clonedSourcePackagesDirPath "$GITHUB_WORKSPACE/.ci-source-packages" \
+            -destination 'platform=macOS' -jobs 2 -parallel-testing-enabled NO \
+            -only-testing:cmuxTests/UniConnectSnapshotAutosaveFeedbackTests \
+            -only-testing:cmuxTests/SessionSaveSchedulingTests \
+            -only-testing:cmuxTests/SessionBackupPreparationTests \
+            -only-testing:cmuxTests/SessionPersistenceTests \
+            -only-testing:cmuxTests/UniConnectRecoveryPersistenceTests \
+            -only-testing:cmuxTests/UniConnectLocalTmuxTests \
+            -only-testing:cmuxTests/UniConnectLocalTmuxIntegrationTests \
+            -resultBundlePath "$RUNNER_TEMP/uniconnect-performance.xcresult" \
+            CMUX_SKIP_ZIG_BUILD=1 test 2>&1 | tee "$RUNNER_TEMP/uniconnect-performance.log"
+          python3 scripts/ci/assert_tests_ran.py --xcresult "$RUNNER_TEMP/uniconnect-performance.xcresult" \
+            --suite UniConnectSnapshotAutosaveFeedbackTests --minimum 1
+
+      - name: Cancelación de Touch ID y botones reales del bloqueo
+        if: ${{ inputs.performance }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts/ci/xcodebuild_noninteractive.py \
+            xcodebuild -project cmux.xcodeproj -scheme cmux-unit -configuration Debug \
+            -derivedDataPath "$RUNNER_TEMP/uniconnect-mobile-rpc-dd" \
+            -destination 'platform=macOS' -parallel-testing-enabled NO \
+            -only-testing:cmuxTests/UniConnectNativePasswordFallbackTests \
+            -resultBundlePath "$RUNNER_TEMP/uniconnect-lock.xcresult" \
+            CMUX_SKIP_ZIG_BUILD=1 test-without-building 2>&1 | tee "$RUNNER_TEMP/uniconnect-lock.log"
+          python3 scripts/ci/assert_tests_ran.py --xcresult "$RUNNER_TEMP/uniconnect-lock.xcresult" \
+            --suite UniConnectNativePasswordFallbackTests --minimum 1
+
       - name: Conservar resultados y registro de la ejecución
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: uniconnect-mobile-rpc-${{ github.sha }}
           path: |
+            ${{ runner.temp }}/uniconnect-performance.xcresult
+            ${{ runner.temp }}/uniconnect-performance.log
+            ${{ runner.temp }}/uniconnect-lock.xcresult
+            ${{ runner.temp }}/uniconnect-lock.log
             ${{ runner.temp }}/uniconnect-mobile-rpc.xcresult
             ${{ runner.temp }}/uniconnect-mobile-rpc.log
             ${{ runner.temp }}/uniconnect-tmux-socket-access.xcresult

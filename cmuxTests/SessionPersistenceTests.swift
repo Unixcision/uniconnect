@@ -103,6 +103,66 @@ struct UniConnectSnapshotAutosaveFeedbackTests {
 }
 
 @MainActor
+@Suite(.timeLimit(.minutes(1)))
+struct SessionSaveSchedulingTests {
+    @Test func burstsKeepATrailingSaveWithAMinimumIntervalAndCancellationAllowsRestart() async throws {
+        let (events, continuation) = AsyncStream<ContinuousClock.Instant>.makeStream()
+        var iterator = events.makeAsyncIterator()
+        let coordinator = SessionSaveCoordinator(minimumInterval: .milliseconds(30)) {
+            continuation.yield(.now)
+        }
+        defer { coordinator.cancel(); continuation.finish() }
+        for _ in 0..<100 { coordinator.request() }
+        let first = try #require(await iterator.next())
+        for _ in 0..<100 { coordinator.request() }
+        let second = try #require(await iterator.next())
+        #expect(first.duration(to: second) >= .milliseconds(30))
+        coordinator.request()
+        coordinator.cancel()
+        coordinator.request()
+        let third = try #require(await iterator.next())
+        #expect(second.duration(to: third) >= .milliseconds(30))
+    }
+}
+
+@Suite
+struct SessionBackupPreparationTests {
+    private actor VaultProvider {
+        private(set) var loads = 0
+        func load() -> Data? { loads += 1; return nil }
+    }
+
+    @Test func ordinaryAutosavesDoNotLoadVaultButDueBackupsAndClockRollbackDo() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = UniConnectRecoveryBackupRepository(rootDirectory: root)
+        let provider = VaultProvider()
+        let now = Date(timeIntervalSince1970: 2_000_000)
+        let snapshot = AppSessionSnapshot(version: SessionSnapshotSchema.currentVersion,
+                                          createdAt: now.timeIntervalSince1970, windows: [])
+        let first = try await repository.archiveIfDue(snapshot: snapshot, now: now) { await provider.load() }
+        #expect(first != nil)
+        for offset in [1, 2, 8, 16, 32, 60, 120] {
+            let result = try await repository.archiveIfDue(snapshot: snapshot, now: now.addingTimeInterval(Double(offset))) {
+                await provider.load()
+            }
+            #expect(result == nil)
+        }
+        #expect(await provider.loads == 1)
+        let due = try await repository.archiveIfDue(snapshot: snapshot, now: now.addingTimeInterval(6 * 3600)) {
+            await provider.load()
+        }
+        #expect(due != nil)
+        #expect(await provider.loads == 2)
+        let rollback = try await repository.archiveIfDue(snapshot: snapshot, now: now.addingTimeInterval(-1)) {
+            await provider.load()
+        }
+        #expect(rollback != nil)
+        #expect(await provider.loads == 3)
+    }
+}
+
+@MainActor
 @Suite
 struct SessionGeometryDefaultsThreadingTests {
     @MainActor

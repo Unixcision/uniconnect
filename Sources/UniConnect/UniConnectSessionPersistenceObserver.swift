@@ -1,7 +1,7 @@
 import Combine
 import Foundation
 
-/// Converts every recovery-relevant model mutation into an immediate session-save request.
+/// Observes durable changes; automatic terminal titles are captured by the regular autosave.
 @MainActor
 final class UniConnectSessionPersistenceObserver {
     private weak var tabManager: TabManager?
@@ -56,7 +56,6 @@ final class UniConnectSessionPersistenceObserver {
 
     private func subscriptions(for workspace: Workspace) -> Set<AnyCancellable> {
         let publishers: [AnyPublisher<String, Never>] = [
-            workspace.$title.removeDuplicates().dropFirst().map { _ in "workspace-name" }.eraseToAnyPublisher(),
             workspace.$customTitle.removeDuplicates().dropFirst().map { _ in "workspace-custom-name" }.eraseToAnyPublisher(),
             workspace.$customDescription.removeDuplicates().dropFirst().map { _ in "workspace-description" }.eraseToAnyPublisher(),
             workspace.$customColor.removeDuplicates().dropFirst().map { _ in "workspace-color" }.eraseToAnyPublisher(),
@@ -66,13 +65,12 @@ final class UniConnectSessionPersistenceObserver {
             workspace.$panels.map { Set($0.keys) }.removeDuplicates().dropFirst().map { _ in "window-membership" }.eraseToAnyPublisher(),
             workspace.$paneLayoutVersion.removeDuplicates().dropFirst().map { _ in "window-order" }.eraseToAnyPublisher(),
             workspace.$panelDirectories.removeDuplicates().dropFirst().map { _ in "window-directory" }.eraseToAnyPublisher(),
-            workspace.$panelTitles.removeDuplicates().dropFirst().map { _ in "window-name" }.eraseToAnyPublisher(),
             workspace.$panelCustomTitles.removeDuplicates().dropFirst().map { _ in "window-custom-name" }.eraseToAnyPublisher(),
             workspace.$pinnedPanelIds.removeDuplicates().dropFirst().map { _ in "window-pinned" }.eraseToAnyPublisher(),
             workspace.$uniConnectProfile.removeDuplicates().dropFirst().map { _ in "connection-profile-reference" }.eraseToAnyPublisher(),
             workspace.$uniConnectTmuxSessionsByPanelId.removeDuplicates().dropFirst().map { _ in "window-tmux-binding" }.eraseToAnyPublisher(),
             workspace.$uniConnectClaudeSessionsByPanelId.removeDuplicates().dropFirst().map { _ in "window-claude-session" }.eraseToAnyPublisher(),
-            workspace.$uniConnectLocalWindowsByPanelId.removeDuplicates().dropFirst().map { _ in "window-local-history" }.eraseToAnyPublisher(),
+            workspace.$uniConnectLocalWindowsByPanelId.removeDuplicates(by: Self.sameRecoveryState).dropFirst().map { _ in "window-local-history" }.eraseToAnyPublisher(),
             workspace.$uniConnectDisconnectedPanelIds.removeDuplicates().dropFirst().map { _ in "window-connection-state" }.eraseToAnyPublisher(),
             NotificationCenter.default.publisher(for: .uniConnectClaudeSessionSignal)
                 .compactMap { $0.object as? UniConnectClaudeSessionSignal }
@@ -92,5 +90,18 @@ final class UniConnectSessionPersistenceObserver {
             }
             .store(in: &subscriptions)
         return subscriptions
+    }
+
+    /// A snapshot refreshes automatic names in these records too. That cosmetic change must
+    /// not trigger another snapshot; explicit names have their own publisher above.
+    private static func sameRecoveryState(
+        _ previous: [UUID: UniConnectLocalWindowRecord],
+        _ current: [UUID: UniConnectLocalWindowRecord]
+    ) -> Bool {
+        guard previous.keys == current.keys else { return false }
+        return current.allSatisfy { id, record in
+            guard let old = previous[id] else { return false }
+            return record.hasSameRecoveryState(as: old)
+        }
     }
 }

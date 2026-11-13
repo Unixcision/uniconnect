@@ -7308,9 +7308,11 @@ final class TerminalSurface: Identifiable, ObservableObject {
         prepareNextRuntimeInitialInput(initialInput)
     }
 
-    func setOcclusion(_ visible: Bool) {
-        guard let surface = surface else { return }
+    @discardableResult
+    func setOcclusion(_ visible: Bool) -> Bool {
+        guard let surface = surface else { return false }
         ghostty_surface_set_occlusion(surface, visible)
+        return true
     }
 
     func needsConfirmClose() -> Bool {
@@ -12899,6 +12901,27 @@ final class GhosttySurfaceScrollView: NSView {
     private var isActive = true
     private var lastFocusRefreshAt: CFTimeInterval = 0
     private var lastRequestedPortalOcclusionVisible: Bool?
+    override var isHidden: Bool {
+        didSet { if oldValue != isHidden { synchronizeRenderVisibility() } }
+    }
+
+    /// Pause only rendering: the PTY, agent, screen contents and notifications remain live.
+    private func synchronizeRenderVisibility(force: Bool = false) {
+        let visible: Bool
+        if !surfaceView.isVisibleInUI || isHiddenOrHasHiddenAncestor {
+            visible = false
+        } else if let window {
+            visible = !window.isMiniaturized && (window.isKeyWindow || window.occlusionState.contains(.visible))
+        } else {
+            // Portal reparenting temporarily detaches a visible view. Preserve its last
+            // rendering state until the real destination window is known (avoids blank frames).
+            return
+        }
+        guard force || lastRequestedPortalOcclusionVisible != visible else { return }
+        if surfaceView.terminalSurface?.setOcclusion(visible) == true {
+            lastRequestedPortalOcclusionVisible = visible
+        }
+    }
     private var activeDropZone: DropZone?
     private var pendingDropZone: DropZone?
     private var dropZoneOverlayAnimationGeneration: UInt64 = 0
@@ -13389,6 +13412,7 @@ final class GhosttySurfaceScrollView: NSView {
                 return
             }
             // Session restore can request focus before the runtime surface exists.
+            self.synchronizeRenderVisibility(force: true)
             // Re-run the normal first-responder/focus path once the surface is live.
             guard self.isActive || self.surfaceView.desiredFocus || self.isSurfaceViewFirstResponder() else {
                 return
@@ -13758,7 +13782,16 @@ final class GhosttySurfaceScrollView: NSView {
         super.viewDidMoveToWindow()
         windowObservers.forEach { NotificationCenter.default.removeObserver($0) }
         windowObservers.removeAll()
+        synchronizeRenderVisibility()
         guard let window else { return }
+        for name in [NSWindow.didChangeOcclusionStateNotification, NSWindow.didMiniaturizeNotification,
+                     NSWindow.didDeminiaturizeNotification] {
+            windowObservers.append(NotificationCenter.default.addObserver(
+                forName: name, object: window, queue: .main
+            ) { [weak self] _ in
+                self?.synchronizeRenderVisibility()
+            })
+        }
         windowObservers.append(NotificationCenter.default.addObserver(
             forName: NSWindow.didBecomeKeyNotification,
             object: window,
@@ -13797,7 +13830,9 @@ final class GhosttySurfaceScrollView: NSView {
     }
 
     func attachSurface(_ terminalSurface: TerminalSurface) {
+        let changedSurface = surfaceView.terminalSurface !== terminalSurface
         surfaceView.attachSurface(terminalSurface)
+        synchronizeRenderVisibility(force: changedSurface)
         // Preserve the bootstrap 800x600 surface until portal reattach churn
         // has produced a real host size instead of a transient 1x1 placeholder.
         guard bounds.width > 1, bounds.height > 1 else { return }
@@ -14612,10 +14647,7 @@ final class GhosttySurfaceScrollView: NSView {
         let wasVisible = surfaceView.isVisibleInUI
         surfaceView.setVisibleInUI(visible)
         isHidden = !visible
-        if wasVisible != visible, lastRequestedPortalOcclusionVisible != visible {
-            lastRequestedPortalOcclusionVisible = visible
-            surfaceView.terminalSurface?.setOcclusion(visible)
-        }
+        synchronizeRenderVisibility()
 #if DEBUG
         if wasVisible != visible {
             let transition = "\(wasVisible ? 1 : 0)->\(visible ? 1 : 0)"

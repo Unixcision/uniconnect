@@ -3,6 +3,7 @@ import Testing
 import Combine
 import Foundation
 import AppKit
+import SwiftUI
 import CryptoKit
 import LocalAuthentication
 import UniConnectClaudeBridge
@@ -1793,6 +1794,48 @@ struct UniConnectNativePasswordFallbackTests {
         lock.presentsWindows = false
         lock.enabledOverride = true
         return (lock, authenticator)
+    }
+
+    @Test
+    func renderedLockButtonsRetryAfterCancellationAndQuitWithAPanelPending() throws {
+        var exits = 0
+        let lock = UniConnectAppLock(terminate: { exits += 1 })
+        let auth = PendingAuthenticator()
+        lock.authenticator = auth
+        lock.enabledOverride = true
+        defer { lock.resetForTesting() }
+        lock.lock()
+        let host = try #require(NSApp.windows.compactMap {
+            $0.contentView as? NSHostingView<UniConnectLockView>
+        }.first)
+        host.layoutSubtreeIfNeeded()
+        func buttons(in view: NSView) -> [NSButton] {
+            (view as? NSButton).map { [$0] } ?? view.subviews.flatMap { buttons(in: $0) }
+        }
+        let controls = buttons(in: host)
+        let unlock = try #require(controls.first {
+            $0.title == String(localized: "uniconnect.lock.action.unlock", defaultValue: "Desbloquear")
+        })
+        let quit = try #require(controls.first {
+            $0.title == String(localized: "uniconnect.lock.action.quit", defaultValue: "Salir")
+        })
+        for button in [unlock, quit] {
+            #expect(!lock.shouldConsumeApplicationAction(button.action, target: button.target, sender: button))
+        }
+        #expect(host.window?.level == .normal)
+        // Keep the real rendered controls; the fake authenticator needs no OS activation.
+        lock.presentsWindows = false
+        unlock.performClick(nil)
+        #expect(auth.evaluatedPolicies.count == 1)
+        // Repeated clicks withdraw a missing modal and issue a fresh authentication request.
+        unlock.performClick(nil)
+        #expect(auth.evaluatedPolicies.count == 2)
+        #expect(auth.cancellations == 1)
+        quit.performClick(nil)
+        #expect(exits == 1)
+        #expect(auth.cancellations == 2)
+        #expect(!lock.isAuthenticating)
+        #expect(lock.isLocked)
     }
 
     private func waitForEvaluationCompletion(_ lock: UniConnectAppLock) async {

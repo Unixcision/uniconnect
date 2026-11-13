@@ -122,7 +122,7 @@ class AgentTreeTests(TreeFixture):
         self.assertEqual(self.tree.live["w-local"]["session"]["agent"]["session_id"], CODEX_ID)
         # Otra lectura igual no vuelve a guardar.
         with patch.object(self.store, "save") as save:
-            self.now[0] += 8
+            self.now[0] += AgentTree.LOCAL_INTERVAL
             self.tree.poll()
             save.assert_not_called()
 
@@ -168,17 +168,24 @@ class AgentTreeTests(TreeFixture):
         self.assertEqual(self.local, before)
         self.assertNotIn("sessionId", self.saved("w-local"))
 
-    def test_ssh_is_not_repeated_before_sixty_seconds_but_local_every_tick(self):
+    def test_periodic_probes_are_bounded_but_explicit_refresh_is_immediate(self):
         self.connect("w-remote")
         self.tree.poll()
         self.now[0] += 8
         self.tree.poll()
         keys = [call[0] for call in FakeTransport.calls]
+        self.assertEqual(keys.count(("local", "uniconnect-local")), 1)
+        self.assertEqual(keys.count(("root@167.233.192.135", "default")), 1)
+        self.now[0] += 22
+        self.tree.poll()
+        keys = [call[0] for call in FakeTransport.calls]
         self.assertEqual(keys.count(("local", "uniconnect-local")), 2)
         self.assertEqual(keys.count(("root@167.233.192.135", "default")), 1)
-        self.now[0] += 60
-        self.tree.poll()
-        self.assertEqual([call[0] for call in FakeTransport.calls].count(("root@167.233.192.135", "default")), 2)
+        self.now[0] += 1
+        self.tree.poll(force=True)
+        keys = [call[0] for call in FakeTransport.calls]
+        self.assertEqual(keys.count(("local", "uniconnect-local")), 3)
+        self.assertEqual(keys.count(("root@167.233.192.135", "default")), 2)
 
     def test_local_always_and_ssh_only_with_a_connected_window_never_twice_at_once(self):
         pending = []
@@ -252,7 +259,7 @@ class AgentTreeTests(TreeFixture):
     def test_session_lost_one_tick_after_the_agent_was_seen_is_interrupted(self):
         self.seen_running()
         FakeTransport.replies[("local", "uniconnect-local")] = {"server": False, "sessions": []}  # Servidor caído.
-        self.now[0] += 8
+        self.now[0] += AgentTree.LOCAL_INTERVAL
         self.tree.poll()
         self.assertEqual((self.saved("w-local")["runtimeState"], self.saved("w-local")["interrupted"]), ("stopped", True))
 
@@ -261,21 +268,21 @@ class AgentTreeTests(TreeFixture):
         # que un /exit seguido de exit o Ctrl+D. No se marca: no se reanuda sola al abrir.
         self.seen_running()
         FakeTransport.replies[("local", "uniconnect-local")] = {"sessions": [session("otra")]}
-        self.now[0] += 8
+        self.now[0] += AgentTree.LOCAL_INTERVAL
         self.tree.poll()
         self.assertFalse(self.saved("w-local").get("interrupted"))
 
     def test_stale_observation_truncated_read_or_deliberate_close_never_interrupt(self):
         self.seen_running()
         FakeTransport.replies[("local", "uniconnect-local")] = {"sessions": [], "truncated": True}
-        self.now[0] += 8
+        self.now[0] += AgentTree.LOCAL_INTERVAL
         self.tree.poll()  # Con truncated, que falte no dice nada.
         self.assertFalse(self.saved("w-local").get("interrupted"))
         FakeTransport.replies[("local", "uniconnect-local")] = {"server": False, "sessions": []}
         self.seen_running()
         self.tree.mark_closed_by_user(self.local)
         FakeTransport.replies[("local", "uniconnect-local")] = {"server": False, "sessions": []}
-        self.now[0] += 8
+        self.now[0] += AgentTree.LOCAL_INTERVAL
         self.tree.poll()  # Cerrada desde UniConnect: nunca interrumpida.
         self.assertFalse(self.saved("w-local").get("interrupted"))
 

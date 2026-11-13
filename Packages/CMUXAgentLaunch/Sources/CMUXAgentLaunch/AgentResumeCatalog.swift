@@ -2,6 +2,11 @@ import Foundation
 
 /// Decodes the command syntax resource consumed by both desktop adapters.
 struct AgentResumeCatalog: Decodable, Sendable, Equatable {
+    // Immutable product policy: the signed bundle cannot change during this process's life.
+    // Explicit-data/locator initializers remain uncached for isolated fixtures and tooling.
+    static let bundled: Result<AgentResumeCatalog, Error> = Result {
+        try AgentResumeCatalog(locator: AgentResumeResourceLocator())
+    }
     let schemaVersion: Int
     let providers: [String: Provider]
 
