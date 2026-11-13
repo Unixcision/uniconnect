@@ -79,6 +79,7 @@ final class UniConnectAppLock: ObservableObject {
     private var lockWindows: [NSWindow] = []
     private var coveredWindowLevels: [(window: NSWindow, level: NSWindow.Level)] = []
     private let terminate: @MainActor () -> Void
+    private var terminationRequested = false
     private var isLaunchGate = false
     /// How long the system panel may stay unanswered before the attempt is withdrawn. A panel
     /// that timed out, or opened on another screen, never reports back; without this deadline
@@ -93,7 +94,7 @@ final class UniConnectAppLock: ObservableObject {
     /// autenticación»), so every tap failed the same way and the lock looked dead forever
     /// (10-nov-2026). The evaluation waits until the app is active instead.
     private var authenticationAwaitsActivation = false
-    /// Follows app activation while locked: the cover floats only while UniConnect is active.
+    /// Follows app activation while locked without elevating the cover over other apps.
     private var activationWatchTasks: [Task<Void, Never>] = []
     private var idleTimer: Timer?
     /// The executable composition root disconnects private remote clients on lock.
@@ -320,7 +321,7 @@ final class UniConnectAppLock: ObservableObject {
     }
 
     func authenticate() {
-        guard isLocked else { return }
+        guard isLocked, !terminationRequested else { return }
         if presentsWindows, !NSApp.isActive {
             authenticationAwaitsActivation = true
             NSApp.activate()
@@ -389,6 +390,8 @@ final class UniConnectAppLock: ObservableObject {
     /// the lock window, which covers every screen, so it could not be seen and its app-modal
     /// session swallowed every click on the lock screen.
     func quitFromLockScreen() {
+        guard !terminationRequested else { return }
+        terminationRequested = true
         authenticationAttempt += 1
         authenticationAwaitsActivation = false
         authenticationDeadlineTask?.cancel()
@@ -509,6 +512,10 @@ final class UniConnectAppLock: ObservableObject {
 #if DEBUG
     /// Restores singleton state between tests without exposing a Release bypass.
     func resetForTesting() {
+        authenticationAttempt += 1
+        authenticator.cancelPending()
+        activationWatchTasks.forEach { $0.cancel() }
+        activationWatchTasks.removeAll()
         idleTimer?.invalidate()
         idleTimer = nil
         for window in lockWindows {
@@ -523,6 +530,7 @@ final class UniConnectAppLock: ObservableObject {
         isLocked = false
         isLaunchGate = false
         isAuthenticating = false
+        terminationRequested = false
         lastError = nil
         authenticationDeadlineTask?.cancel()
         authenticationDeadlineTask = nil

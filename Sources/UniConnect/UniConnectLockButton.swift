@@ -11,7 +11,12 @@ final class UniConnectLockButton: NSButton {
         bezelStyle = .rounded
         controlSize = .large
         font = .systemFont(ofSize: 17, weight: .semibold)
-        if prominent { bezelColor = .systemPink }
+        appearance = NSAppearance(named: .darkAqua)
+        if prominent {
+            bezelColor = .systemPink
+            image = NSImage(systemSymbolName: "touchid", accessibilityDescription: nil)
+            imagePosition = .imageLeading
+        }
         target = self
         self.action = #selector(press)
         setContentHuggingPriority(.defaultHigh, for: .horizontal)

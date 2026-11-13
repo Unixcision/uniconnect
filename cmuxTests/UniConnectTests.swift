@@ -1841,6 +1841,10 @@ struct UniConnectNativePasswordFallbackTests {
         #expect(auth.cancellations == 2)
         #expect(!lock.isAuthenticating)
         #expect(lock.isLocked)
+        quit.performClick(nil)
+        unlock.performClick(nil)
+        #expect(exits == 1)
+        #expect(auth.evaluatedPolicies.count == 3)
     }
 
     private func waitForEvaluationCompletion(_ lock: UniConnectAppLock) async {
