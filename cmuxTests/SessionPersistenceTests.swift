@@ -12,6 +12,32 @@ import Testing
 @MainActor
 @Suite
 struct UniConnectSnapshotAutosaveFeedbackTests {
+    @Test func animatedTitlesWaitForAutosaveButExplicitNamesAndDirectoriesRemainDurable() throws {
+        let manager = TabManager(initialWorkingDirectory: "/tmp", autoWelcomeIfNeeded: false)
+        let workspace = try #require(manager.tabs.first)
+        defer { workspace.teardownAllPanels() }
+        let panelID = try #require(workspace.focusedPanelId)
+        workspace.uniConnectProfile = .init(kind: .local, localRoot: "/tmp")
+        _ = workspace.uniConnectEnsureLocalWindowRecord(panelId: panelID)
+        var requests: [String] = []
+        let observer = UniConnectSessionPersistenceObserver(tabManager: manager) { requests.append($0) }
+        defer { withExtendedLifetime(observer) {} }
+
+        for frame in ["⠙", "⠦", "⠇", "⠸"] {
+            workspace.title = "\(frame) Trabajando"
+            workspace.panelTitles[panelID] = "\(frame) Trabajando"
+        }
+        #expect(requests.isEmpty)
+        let snapshot = workspace.sessionSnapshot(includeScrollback: false)
+        #expect(snapshot.panels.first { $0.id == panelID }?.title == "⠸ Trabajando")
+        #expect(requests.isEmpty, "Capturar el título no debe iniciar otro guardado")
+
+        workspace.panelCustomTitles[panelID] = "Mi conversación"
+        workspace.panelDirectories[panelID] = "/tmp/proyecto"
+        #expect(requests.contains("window-custom-name"))
+        #expect(requests.contains("window-directory"))
+    }
+
     @Test(arguments: [RestorableAgentKind.codex, .claude])
     func repeatedCaptureDoesNotRewriteLiveDirectoryOrRequestAnotherSave(kind: RestorableAgentKind) throws {
         let isolatedHome = FileManager.default.temporaryDirectory
