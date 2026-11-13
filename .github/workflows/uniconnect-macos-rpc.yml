@@ -44,7 +44,7 @@ permissions:
 
 # Conserva ambos resultados de la secuencia de regresión: prueba roja y arreglo verde.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.sha }}
+  group: ${{ github.workflow }}-${{ github.sha }}-${{ inputs.test_ref }}
   cancel-in-progress: false
 
 jobs:

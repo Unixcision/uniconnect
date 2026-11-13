@@ -1797,7 +1797,7 @@ struct UniConnectNativePasswordFallbackTests {
     }
 
     @Test
-    func renderedLockButtonsRetryAfterCancellationAndQuitWithAPanelPending() throws {
+    func renderedLockButtonsRetryAfterCancellationAndQuitWithAPanelPending() async throws {
         var exits = 0
         let lock = UniConnectAppLock(terminate: { exits += 1 })
         let auth = PendingAuthenticator()
@@ -1827,9 +1827,14 @@ struct UniConnectNativePasswordFallbackTests {
         lock.presentsWindows = false
         unlock.performClick(nil)
         #expect(auth.evaluatedPolicies.count == 1)
-        // Repeated clicks withdraw a missing modal and issue a fresh authentication request.
+        auth.complete(success: false, errorCode: .userCancel)
+        await waitForEvaluationCompletion(lock)
+        #expect(lock.isLocked)
         unlock.performClick(nil)
         #expect(auth.evaluatedPolicies.count == 2)
+        // Repeated clicks withdraw a missing modal and issue a fresh authentication request.
+        unlock.performClick(nil)
+        #expect(auth.evaluatedPolicies.count == 3)
         #expect(auth.cancellations == 1)
         quit.performClick(nil)
         #expect(exits == 1)

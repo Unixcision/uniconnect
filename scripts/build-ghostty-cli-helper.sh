@@ -269,6 +269,13 @@ build_helper() {
     --prefix
     "$prefix"
   )
+  if [[ -n "${CMUX_BUILD_JOBS:-}" ]]; then
+    if ! [[ "$CMUX_BUILD_JOBS" =~ ^[1-9][0-9]*$ ]]; then
+      echo "CMUX_BUILD_JOBS debe ser un entero positivo" >&2
+      exit 1
+    fi
+    args+=("-j$CMUX_BUILD_JOBS")
+  fi
 
   if [[ -n "$effective_target" ]]; then
     args+=("-Dtarget=$effective_target")
