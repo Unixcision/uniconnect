@@ -185,4 +185,7 @@ struct AgentLaunchCommandSnapshot: Codable, Equatable, Sendable {
     var environment: [String: String]?
     var capturedAt: TimeInterval?
     var source: String?
+    /// Variables read from a file at launch, as `name: path`: only where the value lives is kept,
+    /// never the value. Only Claude's token file is honoured (``UniConnectClaudeTokenFile``).
+    var environmentFiles: [String: String]? = nil
 }

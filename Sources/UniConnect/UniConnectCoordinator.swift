@@ -289,11 +289,14 @@ final class UniConnectCoordinator: ObservableObject {
             // tmux panes. After /clear or /resume the new id enters and the old one stays
             // in the history. The claim registry inside uniConnectRecordLocalAgent keeps a
             // conversation from being owned by two windows.
-            guard let snapshot = Self.localAgentSnapshot(for: observed) else { return }
+            // A Claude started with a token keeps it on resume: its token file is recorded (the
+            // path, never the token), and a change of token on the same conversation is a change.
+            guard let snapshot = Self.localAgentSnapshot(for: observed, claudeToken: observation.claudeToken) else { return }
             if target.record.runtimeState == .agent,
                let active = target.record.activeConversation,
                let candidate = UniConnectLocalAgentConversation(snapshot: snapshot),
-               active.identityKey == candidate.identityKey {
+               active.identityKey == candidate.identityKey,
+               Self.claudeTokenIsRecorded(observation.claudeToken, in: active) {
                 return
             }
             _ = workspace.uniConnectRecordLocalAgent(panelId: owner.panelID, snapshot: snapshot)
@@ -310,8 +313,15 @@ final class UniConnectCoordinator: ObservableObject {
     /// The secret-free snapshot of a conversation discovered in a live local process.
     ///
     /// The folder is stored as its physical path (realpath), which is where the agent files its
-    /// conversation; no argv or environment is kept, only the kind, id and folder.
-    static func localAgentSnapshot(for observed: AgentObservedConversation) -> SessionRestorableAgentSnapshot? {
+    /// conversation; no argv or environment is kept, only the kind, id, folder and, for a Claude
+    /// started with a token, the file that holds it.
+    ///
+    /// - Parameter claudeToken: What the live Claude's environment said about its token; `nil`
+    ///   when it could not be read, and then nothing saved about the token changes.
+    static func localAgentSnapshot(
+        for observed: AgentObservedConversation,
+        claudeToken: UniConnectClaudeTokenFile.Observation? = nil
+    ) -> SessionRestorableAgentSnapshot? {
         let kind: RestorableAgentKind
         switch observed.provider {
         case .claude: kind = .claude
@@ -320,12 +330,40 @@ final class UniConnectCoordinator: ObservableObject {
         case .grok: kind = .grok
         }
         let directory = observed.workingDirectory.map { AgentResumeWorkingDirectory().realPath($0) }
+        let environmentFiles: [String: String]?
+        switch kind == .claude ? claudeToken : nil {
+        case .noToken?:
+            environmentFiles = [:]
+        case .file(let path)?:
+            environmentFiles = [UniConnectClaudeTokenFile.environmentKey: path]
+        case .unmatched?, nil:
+            environmentFiles = nil
+        }
         return SessionRestorableAgentSnapshot(
             kind: kind,
             sessionId: observed.sessionID,
             workingDirectory: directory,
-            launchCommand: nil
+            launchCommand: environmentFiles.map {
+                AgentLaunchCommandSnapshot(
+                    launcher: nil, executablePath: nil, arguments: [], workingDirectory: nil,
+                    environment: nil, capturedAt: nil, source: "uniconnect-live-process",
+                    environmentFiles: $0
+                )
+            }
         )
+    }
+
+    /// Whether a conversation already records what its live Claude says about its token.
+    static func claudeTokenIsRecorded(
+        _ claudeToken: UniConnectClaudeTokenFile.Observation?,
+        in conversation: UniConnectLocalAgentConversation
+    ) -> Bool {
+        guard conversation.kind == .claude else { return true }
+        switch claudeToken {
+        case .noToken?: return conversation.claudeTokenFile == nil
+        case .file(let path)?: return conversation.claudeTokenFile == path
+        case .unmatched?, nil: return true
+        }
     }
 
     private func scheduleLocalTmuxRuntimeReconciliation() {

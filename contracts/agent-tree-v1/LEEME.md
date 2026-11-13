@@ -379,6 +379,26 @@ Por ventana se guarda, junto a la IA, `launch`:
   arranque). `is_sandbox` sale de `/proc/<pid>/environ` (solo esa variable); `null` si no se puede
   leer (macOS, `ps`). Solo se reescribe lo guardado cuando las opciones cambian.
 
+### Claude con un token: `launch.claude_token_file` (decisión de Dani, 13-11-2026)
+Dani arranca a veces Claude con otra cuenta por token (`claude setup-token`, guardado en
+`~/.claude-kin-token`, y `claude-kin` = `CLAUDE_CODE_OAUTH_TOKEN="$(cat ~/.claude-kin-token)" claude`).
+Al reanudar o relanzar, esa Claude tiene que volver **con el mismo token**, no con el login normal.
+- **Qué se guarda:** `launch.claude_token_file`, la ruta absoluta del fichero que guarda ese token.
+  **Nunca el token.** Opcional y aditivo; solo en `claude`.
+- **Cómo se encuentra:** si el entorno del proceso vivo tiene `CLAUDE_CODE_OAUTH_TOKEN` (macOS
+  `KERN_PROCARGS2`, Linux `/proc/<pid>/environ`), se busca en el home del usuario del proceso un fichero
+  regular (no un enlace) llamado `.claude…token…` o `claude…token…`, suyo, que no pueda escribir nadie
+  más, de 4 KB como mucho, cuyo contenido sin espacios alrededor sea exactamente ese token. El token
+  leído no se guarda ni se registra en ningún sitio.
+- **Qué significa cada lectura:** sin la variable → la Claude va con su login y se borra
+  `claude_token_file`; token encontrado → se guarda la ruta; token que no está en ningún fichero, o
+  entorno que no se puede leer → no se toca lo guardado (no se puede reproducir y no se adivina).
+- **Al reanudar:** `CLAUDE_CODE_OAUTH_TOKEN="$(cat -- '<ruta>')"` delante de la orden, después del
+  `cd`: `cd -- '<cwd>' && CLAUDE_CODE_OAUTH_TOKEN="$(cat -- '/home/u/.claude-kin-token')" claude --resume …`.
+  El token se lee al arrancar; en la orden, el historial del shell y Detalles solo aparece la ruta.
+- Mac: `UniConnectClaudeTokenFile` y `claudeTokenFile` en la conversación de la ventana local. Linux y
+  la sonda SSH (`agent_probe.py`): pendiente de la IA de Linux, con este mismo criterio.
+
 ### Servidor por ventana
 En el cable cada ventana lleva además `kind` (`local` | `ssh`) y `host_label` (`usuario@host:puerto` o
 `null`), copiados de su espacio, para que una ventana se entienda sola. Opcionales y aditivos.

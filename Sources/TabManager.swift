@@ -9636,6 +9636,15 @@ extension TabManager {
         }
         hashOptionalDouble(launchCommand.capturedAt, into: &hasher)
         hashOptionalString(launchCommand.source, into: &hasher)
+        if let environmentFiles = launchCommand.environmentFiles {
+            hasher.combine(true)
+            for key in environmentFiles.keys.sorted() {
+                hasher.combine(key)
+                hasher.combine(environmentFiles[key])
+            }
+        } else {
+            hasher.combine(false)
+        }
     }
 
     private static func hashAgentHibernationPanelState(

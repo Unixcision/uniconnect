@@ -827,6 +827,28 @@ The Mac has its own dictation box, read by the same engine as the phone's dictat
   whisper.cpp or model. The history format and the pieces above are the ones to reuse
   if Linux gets the button.
 
+### Claude started with a token resumes with it (2026-11-13)
+
+A Claude started with `CLAUDE_CODE_OAUTH_TOKEN` (Dani's `claude-kin`, a `claude
+setup-token` token kept in `~/.claude-kin-token`) runs on that token's account. A plain
+`claude --resume` would bring it back on the usual login, so a local window remembers
+the token's file:
+
+- **Detection.** The tmux reconcile already reads each live agent's argv and
+  environment (`KERN_PROCARGS2`). When the window's Claude has the variable,
+  `UniConnectClaudeTokenFile` looks in the home folder for the user's private token
+  file (`.claude…token…` or `claude…token…`, a regular file of the user that no one
+  else can write, at most 4 KB) whose content is exactly that token, and the window's
+  conversation records its path as `claudeTokenFile`. The token itself is never
+  stored or logged. No variable clears it; a token in no file, or an environment that
+  cannot be read, leaves what is saved alone.
+- **Resume.** The resume command gets
+  `CLAUDE_CODE_OAUTH_TOKEN="$(cat -- '<path>')"` after its `cd`, so the token is read
+  when Claude starts and only the path appears in the command, the shell history and
+  «Detalles». The UniConnect Claude wrapper does not clear this variable.
+- **Linux and SSH.** Contract in `contracts/agent-tree-v1` (`launch.claude_token_file`);
+  the Linux edition and the SSH probe are for the Linux AI to implement with the same rule.
+
 ### ローカルウインドウの作成と保存
 
 ショートカット、タブの追加ボタン、コマンドパレット、コンテキストメニューの

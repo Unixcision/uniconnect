@@ -545,6 +545,73 @@ struct UniConnectLocalTmuxTests {
         #expect(await commands.usesOnlyExistingServers())
     }
 
+    @Test("A live Claude started with a token reports the token file that holds it, never the token", arguments: [
+        "tokenFile", "noToken", "unmatched",
+    ])
+    func reportsTheTokenFileOfALiveClaude(_ scenario: String) async throws {
+        let home = FileManager.default.temporaryDirectory
+            .appendingPathComponent("uc-token-home-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+        let tokenFile = home.appendingPathComponent(".claude-kin-token", isDirectory: false)
+        try Data("sk-ant-oat01-prueba-kin\n".utf8).write(to: tokenFile)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: tokenFile.path)
+
+        let workspace = UUID(), panel = UUID(), generation = UUID(), sessionID = UUID()
+        let binding = try #require(UniConnectLocalTmuxBinding(name: "owned", socketName: "test-local"))
+        let record = UniConnectLocalWindowRecord(id: panel, boxRoot: "/tmp", tmuxBinding: binding)
+        let target = UniConnectLocalTmuxRuntimeObservation.Target(owner: .init(
+            workspaceID: workspace, panelID: panel, binding: binding, surfaceGeneration: UUID()
+        ), record: record)
+        let environment = ["CMUX_WORKSPACE_ID": workspace.uuidString, "CMUX_SURFACE_ID": panel.uuidString,
+                           "UNICONNECT_SURFACE_GENERATION": generation.uuidString]
+        var peerEnvironment = environment
+        switch scenario {
+        case "tokenFile": peerEnvironment["CLAUDE_CODE_OAUTH_TOKEN"] = "sk-ant-oat01-prueba-kin"
+        case "unmatched": peerEnvironment["CLAUDE_CODE_OAUTH_TOKEN"] = "sk-ant-oat01-de-nadie"
+        default: break
+        }
+        let peerArguments = CmuxTopProcessArguments(
+            arguments: ["claude", "--resume", sessionID.uuidString], environment: peerEnvironment
+        )
+        let rootArguments = CmuxTopProcessArguments(arguments: ["-zsh"], environment: environment)
+        let root = UniConnectLocalTmuxProcessIdentity(pid: 123, parentPID: 1, userID: 501, startSeconds: 10, startMicroseconds: 1)
+        let peer = UniConnectLocalTmuxProcessIdentity(pid: 234, parentPID: 123, userID: 501, startSeconds: 20, startMicroseconds: 1)
+        let snapshot = CmuxTopProcessSnapshot(processes: [
+            runtimeProcess(pid: 123, parentPID: 1, workspace: workspace, panel: panel, foreground: false),
+            runtimeProcess(pid: 234, parentPID: 123, workspace: workspace, panel: panel, foreground: true),
+        ], sampledAt: Date(), includesProcessDetails: true)
+        let runtime = "owned\t%2\t123\t0\t/tmp\tclaude.exe\n"
+        let owner = "$1\t%2\t123\t0\towned\n"
+        let inspector = UniConnectLocalTmuxService(
+            commands: InspectionCommands(outputs: [runtime, owner, owner, runtime]),
+            processEnvironment: { _ in environment },
+            processIdentity: { [123: root, 234: peer][$0] },
+            isProcessDescendant: { $0 == 234 && $1 == 123 },
+            processSnapshot: { snapshot },
+            processArguments: { pid in pid == 123 ? rootArguments : peerArguments },
+            isForegroundWithoutChildren: { _ in false },
+            claudeConfigDirectory: home.appendingPathComponent(".claude", isDirectory: true),
+            processDirectory: { _ in nil },
+            claudeTokenFiles: UniConnectClaudeTokenFile(homeDirectory: home, userID: getuid())
+        )
+        let observations = await inspector.runtimeObservations(for: [target])
+        let observation = try #require(observations.first)
+        guard case .discovered(let conversation) = observation.state else {
+            Issue.record("expected a discovered Claude, got \(observation.state)")
+            return
+        }
+        #expect(conversation.sessionID == sessionID.uuidString.lowercased())
+        switch scenario {
+        case "tokenFile":
+            #expect(observation.claudeToken == .file(tokenFile.path))
+        case "unmatched":
+            #expect(observation.claudeToken == .unmatched)
+        default:
+            #expect(observation.claudeToken == .noToken)
+        }
+    }
+
     @Test("Legacy unscoped roots recover only verified known Claude state without granting socket ownership", arguments: [
         "legacy", "partialRoot", "emptyRoot", "conflictingRoot", "missingPeerGeneration", "wrongUID",
         "wrongAncestor", "changedRootMetadata", "changedPeerGeneration", "recycledRoot", "replacedPane", "legacyShell",

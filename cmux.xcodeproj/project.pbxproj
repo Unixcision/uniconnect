@@ -781,6 +781,8 @@
 		C1A0DE200000000000000005 /* UniConnectClaudeBridgeTokenVault.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0DE100000000000000005 /* UniConnectClaudeBridgeTokenVault.swift */; };
 		7D566B440EFEB801D3091B24 /* UniConnectClaudeOpenConversationGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 625E066D06499D00B985AE68 /* UniConnectClaudeOpenConversationGuard.swift */; };
 		D26B20000000000000000013 /* UniConnectClaudeSessionSignal.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000013 /* UniConnectClaudeSessionSignal.swift */; };
+		ED9D600EE923F533977756A9 /* UniConnectClaudeTokenFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63716247AE13FF5B152B139E /* UniConnectClaudeTokenFile.swift */; };
+		0BADF82C0C5A46B87717EFB8 /* UniConnectClaudeTokenFileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4137D0299ACF7DC45E92D1B /* UniConnectClaudeTokenFileTests.swift */; };
 		D26C00000000000000000003 /* UniConnectClaudeUpdate in Frameworks */ = {isa = PBXBuildFile; productRef = D26C00000000000000000002 /* UniConnectClaudeUpdate */; };
 		D26C00000000000000000004 /* UniConnectClaudeUpdate in Frameworks */ = {isa = PBXBuildFile; productRef = D26C00000000000000000002 /* UniConnectClaudeUpdate */; };
 		D26B20000000000000000021 /* UniConnectClaudeUpdateHostID.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000021 /* UniConnectClaudeUpdateHostID.swift */; };
@@ -1880,6 +1882,8 @@
 		C1A0DE100000000000000005 /* UniConnectClaudeBridgeTokenVault.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeBridgeTokenVault.swift; sourceTree = "<group>"; };
 		625E066D06499D00B985AE68 /* UniConnectClaudeOpenConversationGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeOpenConversationGuard.swift; sourceTree = "<group>"; };
 		D26B10000000000000000013 /* UniConnectClaudeSessionSignal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeSessionSignal.swift; sourceTree = "<group>"; };
+		63716247AE13FF5B152B139E /* UniConnectClaudeTokenFile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeTokenFile.swift; sourceTree = "<group>"; };
+		B4137D0299ACF7DC45E92D1B /* UniConnectClaudeTokenFileTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeTokenFileTests.swift; sourceTree = "<group>"; };
 		D26B10000000000000000021 /* UniConnectClaudeUpdateHostID.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeUpdateHostID.swift; sourceTree = "<group>"; };
 		D26B10000000000000000032 /* UniConnectControlledProcessRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectControlledProcessRunner.swift; sourceTree = "<group>"; };
 		D26B30000000000000000005 /* UniConnectControlledProcessRunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectControlledProcessRunnerTests.swift; sourceTree = "<group>"; };
@@ -2365,6 +2369,7 @@
 				5EAB7BB3506333984FA9D27B /* UniConnectDictationPanel.swift */,
 				5AF534CE427C98912682B0F6 /* UniConnectDictationBubbleView.swift */,
 				A60BDF900E6E1234AB8539C4 /* UniConnectDictationClock.swift */,
+				63716247AE13FF5B152B139E /* UniConnectClaudeTokenFile.swift */,
 				05BA97A1443EA82266806258 /* UniConnectDictationBubbleState.swift */,
 				E4D4A37027770E6599E48C06 /* UniConnectDictationBubbleLayout.swift */,
 				0F3F4DFA9D6B6292DFAC7BCD /* UniConnectDictationModel.swift */,
@@ -3319,6 +3324,7 @@
 				42092CDB2109E250F7F2A76E /* TabManagerUnitTests.swift */,
 				41777CC1F441E625114CF7B1 /* MobileFilePutServiceTests.swift */,
 				ABB2EB2216F690EFA7E6885A /* UniConnectDictationTests.swift */,
+				B4137D0299ACF7DC45E92D1B /* UniConnectClaudeTokenFileTests.swift */,
 				31064D23F9E8777B9989FAFF /* MobileInboxServiceTests.swift */,
 				41777CC1F441E625114CFRL1 /* UniConnectRelaunchOperationStoreTests.swift */,
 				B72E5A0C81D6470FA33EBRL2 /* UniConnectRelaunchInventoryTests.swift */,
@@ -4267,6 +4273,7 @@
 				C1A0DE200000000000000005 /* UniConnectClaudeBridgeTokenVault.swift in Sources */,
 				7D566B440EFEB801D3091B24 /* UniConnectClaudeOpenConversationGuard.swift in Sources */,
 				D26B20000000000000000013 /* UniConnectClaudeSessionSignal.swift in Sources */,
+				ED9D600EE923F533977756A9 /* UniConnectClaudeTokenFile.swift in Sources */,
 				D26B20000000000000000021 /* UniConnectClaudeUpdateHostID.swift in Sources */,
 				D26B20000000000000000032 /* UniConnectControlledProcessRunner.swift in Sources */,
 				C37968F3598625929F94C75A /* UniConnectCoordinator+Accounts.swift in Sources */,
@@ -4767,6 +4774,7 @@
 				D3284001A1B2C3D4E5F60718 /* TraditionalChineseIMENumpadRegressionTests.swift in Sources */,
 				D26B40000000000000000001 /* UniConnectClaudeBinaryUpdaterTests.swift in Sources */,
 				C1A0DE310000000000000001 /* UniConnectClaudeBridgeMaintenanceTests.swift in Sources */,
+				0BADF82C0C5A46B87717EFB8 /* UniConnectClaudeTokenFileTests.swift in Sources */,
 				D26B40000000000000000005 /* UniConnectControlledProcessRunnerTests.swift in Sources */,
 				B0C10E000000000000000E00 /* UniConnectCreatedWindowPersistenceTests.swift in Sources */,
 				2D2650A60F2113E83D53FF5E /* UniConnectDictationTests.swift in Sources */,

@@ -17,6 +17,8 @@ actor UniConnectLocalTmuxService: UniConnectLocalTmuxInspecting {
     private let claudeConfigDirectory: URL
     /// A process's current folder, the agent's cwd when its session file or rollout has none.
     private let processDirectory: @Sendable (Int) -> String?
+    /// Finds which of the user's token files a live Claude's `CLAUDE_CODE_OAUTH_TOKEN` comes from.
+    private let claudeTokenFiles: UniConnectClaudeTokenFile
 
     init(
         commands: any CommandRunning,
@@ -41,7 +43,8 @@ actor UniConnectLocalTmuxService: UniConnectLocalTmuxInspecting {
             .appendingPathComponent(".claude", isDirectory: true),
         processDirectory: @escaping @Sendable (Int) -> String? = {
             UniConnectLocalTmuxService.currentDirectory(ofProcess: $0)
-        }
+        },
+        claudeTokenFiles: UniConnectClaudeTokenFile = UniConnectClaudeTokenFile()
     ) {
         self.commands = commands
         self.processEnvironment = processEnvironment
@@ -52,6 +55,7 @@ actor UniConnectLocalTmuxService: UniConnectLocalTmuxInspecting {
         self.isForegroundWithoutChildren = isForegroundWithoutChildren
         self.claudeConfigDirectory = claudeConfigDirectory
         self.processDirectory = processDirectory
+        self.claudeTokenFiles = claudeTokenFiles
     }
 
     func runtimeObservations(
@@ -131,7 +135,12 @@ actor UniConnectLocalTmuxService: UniConnectLocalTmuxInspecting {
             } else {
                 guard processIdentity(peer.pid) == peer else { continue }
             }
-            observations.append(.init(target: target, state: state))
+            var observation = UniConnectLocalTmuxRuntimeObservation(target: target, state: state)
+            if case .found(let conversation) = first.outcome, conversation.provider == .claude,
+               let environment = first.claudeTokenEnvironments[conversation.processID] {
+                observation.claudeToken = claudeTokenFiles.observation(environment: environment)
+            }
+            observations.append(observation)
         }
         return observations
     }
@@ -140,6 +149,9 @@ actor UniConnectLocalTmuxService: UniConnectLocalTmuxInspecting {
     private struct AgentDiscoveryPass {
         let outcome: AgentDiscoveryOutcome
         let openFiles: [Int: [String]]
+        /// `CLAUDE_CODE_OAUTH_TOKEN` of each process whose environment could be read (`[:]` when it
+        /// has none). A process missing here was not read: its token is unknown.
+        let claudeTokenEnvironments: [Int: [String: String]]
     }
 
     /// Runs the shared criterion over the pane's subtree with live argv, uid and session files.
@@ -152,11 +164,16 @@ actor UniConnectLocalTmuxService: UniConnectLocalTmuxInspecting {
         let discovery = AgentProcessDiscovery()
         var samples: [AgentProcessSample] = []
         var configDirectories: [Int: String] = [:]
+        var claudeTokenEnvironments: [Int: [String: String]] = [:]
         for pid in processes.expandedPIDs(rootPIDs: [rootPID]).sorted().prefix(discovery.maximumNodes * 2) {
             guard let info = processes.process(pid: pid) else { continue }
             let live = processArguments(pid)
             if let directory = live?.environment["CLAUDE_CONFIG_DIR"], directory.hasPrefix("/") {
                 configDirectories[pid] = directory
+            }
+            if let live {
+                let key = UniConnectClaudeTokenFile.environmentKey
+                claudeTokenEnvironments[pid] = live.environment[key].map { [key: $0] } ?? [:]
             }
             let identity = processIdentity(pid)
             samples.append(AgentProcessSample(
@@ -215,7 +232,7 @@ actor UniConnectLocalTmuxService: UniConnectLocalTmuxInspecting {
             resolvingPath: { AgentResumeWorkingDirectory().realPath($0) },
             codexThreads: { AgentCodexThreadStore(codexHome: codexHome).threads(workingDirectories: $0) }
         )
-        return AgentDiscoveryPass(outcome: outcome, openFiles: openFiles)
+        return AgentDiscoveryPass(outcome: outcome, openFiles: openFiles, claudeTokenEnvironments: claudeTokenEnvironments)
     }
 
     /// When a process started, in milliseconds since 1970, from its kernel record.

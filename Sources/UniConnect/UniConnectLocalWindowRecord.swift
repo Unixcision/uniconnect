@@ -293,7 +293,9 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
             }) {
                 conversations[index] = refreshingResumeWorkingDirectory(
                     in: conversations[index],
-                    from: importedConversation
+                    from: importedConversation,
+                    // A saved state without a token file says nothing about the live process.
+                    claudeTokenFile: importedConversation.claudeTokenFile.map { .some($0) }
                 )
             } else {
                 conversations.append(importedConversation)
@@ -350,7 +352,8 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
             let existing = conversations[index]
             conversation = refreshingResumeWorkingDirectory(
                 in: existing,
-                from: candidate
+                from: candidate,
+                claudeTokenFile: Self.observedClaudeTokenFile(in: snapshot)
             )
             refreshed = conversation != existing
             if refreshed {
@@ -398,7 +401,8 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
             let existing = conversations[index]
             conversation = refreshingResumeWorkingDirectory(
                 in: existing,
-                from: candidate
+                from: candidate,
+                claudeTokenFile: Self.observedClaudeTokenFile(in: snapshot)
             )
             refreshed = conversation != existing
             if refreshed {
@@ -660,9 +664,12 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
         return Self.validatedWorkingDirectory(workingDirectory, within: boxRoot)
     }
 
+    /// - Parameter claudeTokenFile: The token file the live Claude was seen with: `nil` when the
+    ///   observation says nothing about it (a hook, a saved state), `.some(nil)` when it has none.
     private func refreshingResumeWorkingDirectory(
         in existing: UniConnectLocalAgentConversation,
-        from candidate: UniConnectLocalAgentConversation
+        from candidate: UniConnectLocalAgentConversation,
+        claudeTokenFile: String?? = nil
     ) -> UniConnectLocalAgentConversation {
         let descriptor = existing.customAgentDescriptor ?? candidate.customAgentDescriptor
         let recordsRuntimeWorkingDirectory = descriptor != nil
@@ -670,8 +677,10 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
         let workingDirectory = recordsRuntimeWorkingDirectory
             ? (candidate.resumeWorkingDirectory ?? existing.resumeWorkingDirectory)
             : existing.resumeWorkingDirectory
+        let tokenFile = existing.kind == .claude ? (claudeTokenFile ?? existing.claudeTokenFile) : nil
         guard workingDirectory != existing.resumeWorkingDirectory
-                || descriptor != existing.customAgentDescriptor else {
+                || descriptor != existing.customAgentDescriptor
+                || tokenFile != existing.claudeTokenFile else {
             return existing
         }
         return UniConnectLocalAgentConversation(
@@ -681,8 +690,16 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
             displayName: existing.displayName,
             resumeWorkingDirectory: workingDirectory,
             customAgentDescriptor: descriptor,
-            firstSeenAt: existing.firstSeenAt
+            firstSeenAt: existing.firstSeenAt,
+            claudeTokenFile: tokenFile
         ) ?? existing
+    }
+
+    /// What a snapshot says about its Claude's token file: `nil` when it was not observed (no
+    /// `environmentFiles`), `.some(nil)` when the live Claude had no token.
+    private static func observedClaudeTokenFile(in snapshot: SessionRestorableAgentSnapshot) -> String?? {
+        guard let files = snapshot.launchCommand?.environmentFiles else { return nil }
+        return .some(files[UniConnectClaudeTokenFile.environmentKey])
     }
 
     private mutating func repairReferences() {

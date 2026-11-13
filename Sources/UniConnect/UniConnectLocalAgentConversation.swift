@@ -242,6 +242,7 @@ struct UniConnectLocalAgentConversation: Codable, Equatable, Identifiable, Senda
         case resumeWorkingDirectory
         case customAgentDescriptor
         case firstSeenAt
+        case claudeTokenFile
     }
 
     let id: UUID
@@ -253,6 +254,10 @@ struct UniConnectLocalAgentConversation: Codable, Equatable, Identifiable, Senda
     /// Immutable custom resume semantics; never includes captured argv or environment.
     let customAgentDescriptor: CustomAgentDescriptor?
     let firstSeenAt: TimeInterval
+    /// The file holding the token a Claude was started with (`CLAUDE_CODE_OAUTH_TOKEN`), so it
+    /// resumes on that token's account. The path only, never the token; `nil` for Claude on its
+    /// usual login and for every other agent.
+    let claudeTokenFile: String?
 
     init?(
         id: UUID = UUID(),
@@ -261,7 +266,8 @@ struct UniConnectLocalAgentConversation: Codable, Equatable, Identifiable, Senda
         displayName: String? = nil,
         resumeWorkingDirectory: String? = nil,
         customAgentDescriptor: CustomAgentDescriptor? = nil,
-        firstSeenAt: TimeInterval = Date().timeIntervalSince1970
+        firstSeenAt: TimeInterval = Date().timeIntervalSince1970,
+        claudeTokenFile: String? = nil
     ) {
         guard sessionID.utf8.count <= Self.maximumSessionIDUTF8Bytes,
               !sessionID.unicodeScalars.contains(where: {
@@ -301,6 +307,7 @@ struct UniConnectLocalAgentConversation: Codable, Equatable, Identifiable, Senda
         self.resumeWorkingDirectory = Self.normalizedWorkingDirectory(resumeWorkingDirectory)
         self.customAgentDescriptor = customAgentDescriptor
         self.firstSeenAt = firstSeenAt.isFinite ? firstSeenAt : 0
+        self.claudeTokenFile = kind == .claude ? UniConnectClaudeTokenFile.validatedPath(claudeTokenFile) : nil
     }
 
     /// Copies an already validated conversation under a replacement local identifier.
@@ -312,6 +319,7 @@ struct UniConnectLocalAgentConversation: Codable, Equatable, Identifiable, Senda
         self.resumeWorkingDirectory = conversation.resumeWorkingDirectory
         self.customAgentDescriptor = conversation.customAgentDescriptor
         self.firstSeenAt = conversation.firstSeenAt
+        self.claudeTokenFile = conversation.claudeTokenFile
     }
 
     init?(
@@ -357,7 +365,8 @@ struct UniConnectLocalAgentConversation: Codable, Equatable, Identifiable, Senda
             displayName: snapshot.agentDisplayName,
             resumeWorkingDirectory: snapshot.workingDirectory,
             customAgentDescriptor: customAgentDescriptor,
-            firstSeenAt: firstSeenAt
+            firstSeenAt: firstSeenAt,
+            claudeTokenFile: snapshot.launchCommand?.environmentFiles?[UniConnectClaudeTokenFile.environmentKey]
         )
     }
 
@@ -386,7 +395,9 @@ struct UniConnectLocalAgentConversation: Codable, Equatable, Identifiable, Senda
             displayName: try container.decodeIfPresent(String.self, forKey: .displayName),
             resumeWorkingDirectory: rawWorkingDirectory,
             customAgentDescriptor: customAgentDescriptor,
-            firstSeenAt: try container.decodeIfPresent(TimeInterval.self, forKey: .firstSeenAt) ?? 0
+            firstSeenAt: try container.decodeIfPresent(TimeInterval.self, forKey: .firstSeenAt) ?? 0,
+            // An unusable saved path is dropped, not fatal: the conversation still resumes.
+            claudeTokenFile: try container.decodeIfPresent(String.self, forKey: .claudeTokenFile)
         ) else {
             throw DecodingError.dataCorruptedError(
                 forKey: .sessionID,
@@ -411,8 +422,23 @@ struct UniConnectLocalAgentConversation: Codable, Equatable, Identifiable, Senda
             displayName: displayName,
             resumeWorkingDirectory: normalized,
             customAgentDescriptor: customAgentDescriptor,
-            firstSeenAt: firstSeenAt
+            firstSeenAt: firstSeenAt,
+            claudeTokenFile: claudeTokenFile
         )
+    }
+
+    /// Returns this conversation with the token file its live Claude was seen with (`nil`: none).
+    func assigningClaudeTokenFile(_ path: String?) -> UniConnectLocalAgentConversation {
+        UniConnectLocalAgentConversation(
+            id: id,
+            kind: kind,
+            sessionID: sessionID,
+            displayName: displayName,
+            resumeWorkingDirectory: resumeWorkingDirectory,
+            customAgentDescriptor: customAgentDescriptor,
+            firstSeenAt: firstSeenAt,
+            claudeTokenFile: path
+        ) ?? self
     }
 
     /// Stable identity used to deduplicate repeated hook/process observations.
@@ -477,7 +503,8 @@ struct UniConnectLocalAgentConversation: Codable, Equatable, Identifiable, Senda
             workingDirectory: workingDirectory,
             environment: nil,
             capturedAt: firstSeenAt,
-            source: "uniconnect-local-history"
+            source: "uniconnect-local-history",
+            environmentFiles: claudeTokenFile.map { [UniConnectClaudeTokenFile.environmentKey: $0] }
         )
     }
 

@@ -24,4 +24,7 @@ struct UniConnectLocalTmuxRuntimeObservation: Sendable {
 
     let target: Target
     let state: State
+    /// The token a discovered Claude runs on, when its environment could be read; `nil` otherwise
+    /// and for every other agent.
+    var claudeToken: UniConnectClaudeTokenFile.Observation? = nil
 }

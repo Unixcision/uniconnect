@@ -342,8 +342,21 @@ enum AgentResumeCommandBuilder {
                 workingDirectory: cwd
             )
             : commandParts
-        let shellCommand = sanitizedCommandParts.map(shellSingleQuoted).joined(separator: " ")
+        let shellCommand = (fileEnvironmentAssignments(kind: kind, launchCommand: launchCommand)
+            + sanitizedCommandParts.map(shellSingleQuoted)).joined(separator: " ")
         return TerminalStartupWorkingDirectoryPrefix.prefix(shellCommand, workingDirectory: cwd)
+    }
+
+    /// `KEY="$(cat -- '<path>')"` for the variables a launch keeps as files, read when the agent
+    /// starts so the value never enters the command. Only Claude's token file is honoured.
+    private static func fileEnvironmentAssignments(
+        kind: RestorableAgentKind,
+        launchCommand: AgentLaunchCommandSnapshot?
+    ) -> [String] {
+        guard kind == .claude,
+              let path = launchCommand?.environmentFiles?[UniConnectClaudeTokenFile.environmentKey],
+              let assignment = UniConnectClaudeTokenFile.shellAssignment(path: path) else { return [] }
+        return [assignment]
     }
 
     static func openCodeVersionProbe(
