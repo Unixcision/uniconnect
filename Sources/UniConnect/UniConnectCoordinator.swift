@@ -49,6 +49,8 @@ final class UniConnectCoordinator: ObservableObject {
     var accountsReader: UniConnectAccountsReader?
     /// The «Cuentas de IA» window, created on first open.
     var accountsWindowController: UniConnectAccountsWindowController?
+    /// «Dictado»'s floating button and box (UniConnectCoordinator+Dictation); set by the composition root.
+    var dictationController: UniConnectDictationPanelController?
     private var sshWorkspaceCreationTasks: [ObjectIdentifier: Task<Void, Never>] = [:]
     private var sshWorkspaceCreationTokens: [ObjectIdentifier: UUID] = [:]
     private var sshCredentialEditTasks: [UUID: Task<Void, Never>] = [:]

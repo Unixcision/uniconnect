@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import CmuxSidebarInterpreterClient
 import CmuxSidebarRemoteRender
 import CmuxSocketControl
@@ -349,6 +350,24 @@ struct cmuxApp: App {
             )
         )
 
+        // «Dictado»: el botón flotante graba con el micrófono del Mac y lo lee el Whisper de este
+        // Mac, el mismo motor que transcribe los dictados del móvil, con sus propios límites.
+        UniConnectCoordinator.shared.configureDictation(
+            transcriber: MobileTranscriptionService(limits: .macDictation),
+            historyDirectory: FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Application Support/UniConnect", isDirectory: true)
+                .appendingPathComponent("dictados", isDirectory: true),
+            lockStates: AsyncStream { continuation in
+                let follower = Task { @MainActor in
+                    for await locked in UniConnectAppLock.shared.$isLocked.values {
+                        continuation.yield(locked)
+                    }
+                    continuation.finish()
+                }
+                continuation.onTermination = { _ in follower.cancel() }
+            }
+        )
+
         // Relanzar IA y Actualizar Claude: el trabajador de Linux por el SSH de cada caja, y las
         // instalaciones de Claude de este Mac (login, versión y `claude update`).
         UniConnectCoordinator.shared.configureRelaunch(
@@ -649,6 +668,14 @@ struct cmuxApp: App {
                     Label(
                         String(localized: "menu.app.aiAccounts", defaultValue: "Cuentas de IA…"),
                         systemImage: "person.crop.circle.badge.checkmark"
+                    )
+                }
+                Button {
+                    UniConnectCoordinator.shared.showDictation()
+                } label: {
+                    Label(
+                        String(localized: "menu.app.dictation", defaultValue: "Dictado por voz…"),
+                        systemImage: "mic"
                     )
                 }
                 Button {

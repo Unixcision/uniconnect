@@ -1080,6 +1080,44 @@ struct MobileTranscriptionServiceTests {
         #expect(await service.pendingCleanupCount == 1)
     }
 
+    @Test("un clip grabado en el Mac pasa por el mismo motor sin base64 ni dispositivo")
+    func macDictationUsesTheSameEngine() async throws {
+        let runner = RecordingRunner(results: [RecordingRunner.succeeding(text: "Relanza el MINIPC.\n")])
+        let service = try makeService(
+            toolchain: MobileTranscriptionToolchain(
+                whisperCLI: URL(fileURLWithPath: "/opt/homebrew/bin/whisper-cli"),
+                ffmpeg: nil,
+                ffprobe: nil
+            ),
+            model: URL(fileURLWithPath: "/modelos/ggml-large-v3-turbo-q5_0.bin"),
+            runner: runner,
+            limits: .macDictation
+        )
+        let outcome = try await service.transcribe(audio: WAVFixture(seconds: 2).data, mime: "audio/wav", language: "es")
+        #expect(outcome.text == "Relanza el MINIPC.")
+        #expect(outcome.engine == "whisper.cpp/ggml-large-v3-turbo-q5_0.bin")
+        let arguments = try #require(await runner.invocations.first).arguments
+        #expect(arguments.contains("es"))
+    }
+
+    @Test("el Mac admite grabaciones de 15 minutos, que el móvil no")
+    func macDictationLimits() throws {
+        let quinceMinutos = Data(count: 4 * 1_048_576)
+        #expect(throws: Never.self) {
+            try MobileTranscriptionLimits.macDictation.verify(seconds: 899)
+        }
+        #expect(throws: MobileTranscriptionError.tooLarge) {
+            try MobileTranscriptionLimits.macDictation.verify(seconds: 901)
+        }
+        #expect(throws: MobileTranscriptionError.tooLarge) {
+            try MobileTranscriptionLimits().validate(audio: quinceMinutos, mime: "audio/mp4", language: "es")
+        }
+        let request = try MobileTranscriptionLimits.macDictation.validate(audio: quinceMinutos, mime: "audio/mp4", language: "es-ES")
+        #expect(request.language == "es")
+        #expect(request.device == nil)
+        #expect(request.format == .mp4)
+    }
+
     @Test("el segundo dictado del mismo móvil recibe busy, y cerrar la conexión libera el turno")
     func busyPerDevice() async throws {
         let service = try makeService(

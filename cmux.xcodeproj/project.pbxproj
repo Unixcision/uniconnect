@@ -481,6 +481,7 @@
 		46295499EA2390A1C218A403 /* MobileTranscriptionAvailability.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1365AC47D1BE6D374F820E1A /* MobileTranscriptionAvailability.swift */; };
 		9DF4852544031C6B0CA7D937 /* MobileTranscriptionError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F990F958ABAA89961876EE6 /* MobileTranscriptionError.swift */; };
 		28E99D7BB783F0B9B17CC94B /* MobileTranscriptionJob.swift in Sources */ = {isa = PBXBuildFile; fileRef = 380046FCE101A17CB998067A /* MobileTranscriptionJob.swift */; };
+		77FFFA7358EF492759603F7B /* MobileTranscriptionLimits+MacDictation.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEEAE41C1CD1954BEB2B89E9 /* MobileTranscriptionLimits+MacDictation.swift */; };
 		F15F995EEA5E70268D317C1B /* MobileTranscriptionLimits.swift in Sources */ = {isa = PBXBuildFile; fileRef = A828817C2BA47A48DF21AF86 /* MobileTranscriptionLimits.swift */; };
 		D949CA731C6CB49EB6984A80 /* MobileTranscriptionOutcome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01AEEE6E81607559FBAAC0F5 /* MobileTranscriptionOutcome.swift */; };
 		CF84F0A7FD82B07402A64603 /* MobileTranscriptionProcessHandle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FDFEF6F0B0F157666C45D16 /* MobileTranscriptionProcessHandle.swift */; };
@@ -488,6 +489,7 @@
 		63A83561D8BFD6EFA3490D65 /* MobileTranscriptionProcessRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25322FAC943BB4E14F4110AF /* MobileTranscriptionProcessRunner.swift */; };
 		4B5C5A7A2056FEA0AF97352A /* MobileTranscriptionProcessRunning.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36EF6FB2EFCA151569A6F11A /* MobileTranscriptionProcessRunning.swift */; };
 		3F68222E28153AC0E0B7BC1D /* MobileTranscriptionRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 771B192627475FC34AE7FED5 /* MobileTranscriptionRequest.swift */; };
+		88DF4743C697BC1EC352716D /* MobileTranscriptionService+Dictation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51E9885CD0BAC4AA0C95DE7D /* MobileTranscriptionService+Dictation.swift */; };
 		0E57E993EB2408D567BDE499 /* MobileTranscriptionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B4AC74967E58DD505DF467B /* MobileTranscriptionService.swift */; };
 		6812B98A9774E429DBADBF81 /* MobileTranscriptionSpawn.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78BAA3B8C57C7203FA781FBA /* MobileTranscriptionSpawn.swift */; };
 		EDB39055BF39DD53FFB8D392 /* MobileTranscriptionSpawner.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDF5457FA60A6AC4BDB2E779 /* MobileTranscriptionSpawner.swift */; };
@@ -785,11 +787,38 @@
 		D26B20000000000000000032 /* UniConnectControlledProcessRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000032 /* UniConnectControlledProcessRunner.swift */; };
 		D26B40000000000000000005 /* UniConnectControlledProcessRunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B30000000000000000005 /* UniConnectControlledProcessRunnerTests.swift */; };
 		C37968F3598625929F94C75A /* UniConnectCoordinator+Accounts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3371F7D4E7CF447F7CCB7E5A /* UniConnectCoordinator+Accounts.swift */; };
+		349CB63B5D8EFEF4CC846951 /* UniConnectCoordinator+Dictation.swift in Sources */ = {isa = PBXBuildFile; fileRef = C011DD4575E3659AD422B687 /* UniConnectCoordinator+Dictation.swift */; };
 		B25547160DB5CC546C7261A7 /* UniConnectCoordinator+RemoteAgents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23719336AFEE791948AACB3B /* UniConnectCoordinator+RemoteAgents.swift */; };
 		9DC5393D7A8B5709EFD12F5C /* UniConnectCoordinator+WindowDetails.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA1BA471D60DC08EB5DF2357 /* UniConnectCoordinator+WindowDetails.swift */; };
 		C0FFEE0600000000000000B1 /* UniConnectCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE0600000000000000A1 /* UniConnectCoordinator.swift */; };
 		B0C10E0000000000000000B1 /* UniConnectCreatedWindowPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0C10E0000000000000000B2 /* UniConnectCreatedWindowPersistence.swift */; };
 		B0C10E000000000000000E00 /* UniConnectCreatedWindowPersistenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0C10E000000000000000E01 /* UniConnectCreatedWindowPersistenceTests.swift */; };
+		631C5AEE3674B3339BE86611 /* UniConnectDictationAudioPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44D62D184B772E24E289B9BB /* UniConnectDictationAudioPlayer.swift */; };
+		E1303FCF87911B75D6874DF4 /* UniConnectDictationAudioRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38BB36B2A46252C929B6F454 /* UniConnectDictationAudioRecorder.swift */; };
+		0838B81B222C12B29C7E4C8E /* UniConnectDictationBoxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CCBCB28B5AF91D321104CE1 /* UniConnectDictationBoxView.swift */; };
+		449A1162C7CDE020BE57C055 /* UniConnectDictationBubbleHostView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE7C721F39090D6D80F0510C /* UniConnectDictationBubbleHostView.swift */; };
+		43F05865413A14D20839F907 /* UniConnectDictationBubbleLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4D4A37027770E6599E48C06 /* UniConnectDictationBubbleLayout.swift */; };
+		C1F1EC5CD4F24CAE5E77EA3D /* UniConnectDictationBubbleState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05BA97A1443EA82266806258 /* UniConnectDictationBubbleState.swift */; };
+		C220B035E1C0F9FC884190A4 /* UniConnectDictationBubbleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AF534CE427C98912682B0F6 /* UniConnectDictationBubbleView.swift */; };
+		AD7A7B7C973236C7755DCB40 /* UniConnectDictationClock.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60BDF900E6E1234AB8539C4 /* UniConnectDictationClock.swift */; };
+		71F14B3E4DC8CD3FEC2B7000 /* UniConnectDictationHistoryRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F5206D6F080FAFB09CCAD9A /* UniConnectDictationHistoryRowView.swift */; };
+		4A1480F41BCF2645045D6314 /* UniConnectDictationHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98436AD3148D328F39DFBDF7 /* UniConnectDictationHistoryStore.swift */; };
+		5C4467C47EF018EB23D6CC26 /* UniConnectDictationLanguage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 373930DA092D98F16D0DB584 /* UniConnectDictationLanguage.swift */; };
+		0650B301C727C7EF229E9162 /* UniConnectDictationLevelBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99A9585DA30E9B975D52BE30 /* UniConnectDictationLevelBar.swift */; };
+		EB9EACA4F1F893D45D96B5CC /* UniConnectDictationModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F3F4DFA9D6B6292DFAC7BCD /* UniConnectDictationModel.swift */; };
+		D91D83BD2FFE17A11E03286C /* UniConnectDictationPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EAB7BB3506333984FA9D27B /* UniConnectDictationPanel.swift */; };
+		D5B88C656AFD343FD5DC1C00 /* UniConnectDictationPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C825C956B3E6EBD5A6D6501 /* UniConnectDictationPanelController.swift */; };
+		DFAB287CCF448659A6C2CEE3 /* UniConnectDictationPlaying.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA1510FC345E66D5398F43D1 /* UniConnectDictationPlaying.swift */; };
+		3C864034570DC57C4612F86E /* UniConnectDictationRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84032D50DB153D889EBB3692 /* UniConnectDictationRecord.swift */; };
+		E3B47D347FA9E1B3731B4E75 /* UniConnectDictationRecorderError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A15BF81D7EBEB296D3BD663B /* UniConnectDictationRecorderError.swift */; };
+		48A3E8BA728E00FDA6854A77 /* UniConnectDictationRecording.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7067D6C952252DA43041215 /* UniConnectDictationRecording.swift */; };
+		2C31B9EB03D094829E2C5A79 /* UniConnectDictationRetention.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FEDB841C9AD269497E7187B /* UniConnectDictationRetention.swift */; };
+		531393D4F29C9FDE435C37EA /* UniConnectDictationSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = FECCBFB5FBA37BAFFAD707C4 /* UniConnectDictationSearch.swift */; };
+		2FB85E50E05B4D46D8DD9E05 /* UniConnectDictationTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0CC2D9D93AB22668CF6E11C /* UniConnectDictationTarget.swift */; };
+		805AEAAFE0C80F8B4BB1D1B3 /* UniConnectDictationTerminalBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A87927305DF0E5598D368899 /* UniConnectDictationTerminalBridge.swift */; };
+		9B10DB2BA6BE5024B27E9341 /* UniConnectDictationTerminals.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24FE9D59C010B5EFCD0B33CA /* UniConnectDictationTerminals.swift */; };
+		2D2650A60F2113E83D53FF5E /* UniConnectDictationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABB2EB2216F690EFA7E6885A /* UniConnectDictationTests.swift */; };
+		BAEA13A7E446A53BB7ECD841 /* UniConnectDictationTranscribing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2582D6DDAD484770CA20A9F6 /* UniConnectDictationTranscribing.swift */; };
 		A7D15C0000000000000000A2 /* UniConnectDisconnectedTitle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7D15C0000000000000000A1 /* UniConnectDisconnectedTitle.swift */; };
 		A7D15C0000000000000000B2 /* UniConnectDisconnectedTitleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7D15C0000000000000000B1 /* UniConnectDisconnectedTitleTests.swift */; };
 		D1320AA0D1320AA0D1320AA2 /* UniConnectDockTilePlugin.plugin in Copy Dock Tile Plugin */ = {isa = PBXBuildFile; fileRef = D1320AA0D1320AA0D1320AA5 /* UniConnectDockTilePlugin.plugin */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
@@ -1560,6 +1589,7 @@
 		1365AC47D1BE6D374F820E1A /* MobileTranscriptionAvailability.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileTranscriptionAvailability.swift; sourceTree = "<group>"; };
 		3F990F958ABAA89961876EE6 /* MobileTranscriptionError.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileTranscriptionError.swift; sourceTree = "<group>"; };
 		380046FCE101A17CB998067A /* MobileTranscriptionJob.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileTranscriptionJob.swift; sourceTree = "<group>"; };
+		AEEAE41C1CD1954BEB2B89E9 /* MobileTranscriptionLimits+MacDictation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MobileTranscriptionLimits+MacDictation.swift"; sourceTree = "<group>"; };
 		A828817C2BA47A48DF21AF86 /* MobileTranscriptionLimits.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileTranscriptionLimits.swift; sourceTree = "<group>"; };
 		01AEEE6E81607559FBAAC0F5 /* MobileTranscriptionOutcome.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileTranscriptionOutcome.swift; sourceTree = "<group>"; };
 		6FDFEF6F0B0F157666C45D16 /* MobileTranscriptionProcessHandle.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileTranscriptionProcessHandle.swift; sourceTree = "<group>"; };
@@ -1567,6 +1597,7 @@
 		25322FAC943BB4E14F4110AF /* MobileTranscriptionProcessRunner.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileTranscriptionProcessRunner.swift; sourceTree = "<group>"; };
 		36EF6FB2EFCA151569A6F11A /* MobileTranscriptionProcessRunning.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileTranscriptionProcessRunning.swift; sourceTree = "<group>"; };
 		771B192627475FC34AE7FED5 /* MobileTranscriptionRequest.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileTranscriptionRequest.swift; sourceTree = "<group>"; };
+		51E9885CD0BAC4AA0C95DE7D /* MobileTranscriptionService+Dictation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MobileTranscriptionService+Dictation.swift"; sourceTree = "<group>"; };
 		9B4AC74967E58DD505DF467B /* MobileTranscriptionService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileTranscriptionService.swift; sourceTree = "<group>"; };
 		78BAA3B8C57C7203FA781FBA /* MobileTranscriptionSpawn.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileTranscriptionSpawn.swift; sourceTree = "<group>"; };
 		EDF5457FA60A6AC4BDB2E779 /* MobileTranscriptionSpawner.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileTranscriptionSpawner.swift; sourceTree = "<group>"; };
@@ -1853,11 +1884,38 @@
 		D26B10000000000000000032 /* UniConnectControlledProcessRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectControlledProcessRunner.swift; sourceTree = "<group>"; };
 		D26B30000000000000000005 /* UniConnectControlledProcessRunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectControlledProcessRunnerTests.swift; sourceTree = "<group>"; };
 		3371F7D4E7CF447F7CCB7E5A /* UniConnectCoordinator+Accounts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UniConnectCoordinator+Accounts.swift"; sourceTree = "<group>"; };
+		C011DD4575E3659AD422B687 /* UniConnectCoordinator+Dictation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UniConnectCoordinator+Dictation.swift"; sourceTree = "<group>"; };
 		23719336AFEE791948AACB3B /* UniConnectCoordinator+RemoteAgents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UniConnectCoordinator+RemoteAgents.swift"; sourceTree = "<group>"; };
 		EA1BA471D60DC08EB5DF2357 /* UniConnectCoordinator+WindowDetails.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UniConnectCoordinator+WindowDetails.swift"; sourceTree = "<group>"; };
 		C0FFEE0600000000000000A1 /* UniConnectCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectCoordinator.swift; sourceTree = "<group>"; };
 		B0C10E0000000000000000B2 /* UniConnectCreatedWindowPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectCreatedWindowPersistence.swift; sourceTree = "<group>"; };
 		B0C10E000000000000000E01 /* UniConnectCreatedWindowPersistenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectCreatedWindowPersistenceTests.swift; sourceTree = "<group>"; };
+		44D62D184B772E24E289B9BB /* UniConnectDictationAudioPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectDictationAudioPlayer.swift; sourceTree = "<group>"; };
+		38BB36B2A46252C929B6F454 /* UniConnectDictationAudioRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectDictationAudioRecorder.swift; sourceTree = "<group>"; };
+		8CCBCB28B5AF91D321104CE1 /* UniConnectDictationBoxView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectDictationBoxView.swift; sourceTree = "<group>"; };
+		FE7C721F39090D6D80F0510C /* UniConnectDictationBubbleHostView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectDictationBubbleHostView.swift; sourceTree = "<group>"; };
+		E4D4A37027770E6599E48C06 /* UniConnectDictationBubbleLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectDictationBubbleLayout.swift; sourceTree = "<group>"; };
+		05BA97A1443EA82266806258 /* UniConnectDictationBubbleState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectDictationBubbleState.swift; sourceTree = "<group>"; };
+		5AF534CE427C98912682B0F6 /* UniConnectDictationBubbleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectDictationBubbleView.swift; sourceTree = "<group>"; };
+		A60BDF900E6E1234AB8539C4 /* UniConnectDictationClock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectDictationClock.swift; sourceTree = "<group>"; };
+		8F5206D6F080FAFB09CCAD9A /* UniConnectDictationHistoryRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectDictationHistoryRowView.swift; sourceTree = "<group>"; };
+		98436AD3148D328F39DFBDF7 /* UniConnectDictationHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectDictationHistoryStore.swift; sourceTree = "<group>"; };
+		373930DA092D98F16D0DB584 /* UniConnectDictationLanguage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectDictationLanguage.swift; sourceTree = "<group>"; };
+		99A9585DA30E9B975D52BE30 /* UniConnectDictationLevelBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectDictationLevelBar.swift; sourceTree = "<group>"; };
+		0F3F4DFA9D6B6292DFAC7BCD /* UniConnectDictationModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectDictationModel.swift; sourceTree = "<group>"; };
+		5EAB7BB3506333984FA9D27B /* UniConnectDictationPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectDictationPanel.swift; sourceTree = "<group>"; };
+		0C825C956B3E6EBD5A6D6501 /* UniConnectDictationPanelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectDictationPanelController.swift; sourceTree = "<group>"; };
+		DA1510FC345E66D5398F43D1 /* UniConnectDictationPlaying.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectDictationPlaying.swift; sourceTree = "<group>"; };
+		84032D50DB153D889EBB3692 /* UniConnectDictationRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectDictationRecord.swift; sourceTree = "<group>"; };
+		A15BF81D7EBEB296D3BD663B /* UniConnectDictationRecorderError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectDictationRecorderError.swift; sourceTree = "<group>"; };
+		B7067D6C952252DA43041215 /* UniConnectDictationRecording.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectDictationRecording.swift; sourceTree = "<group>"; };
+		3FEDB841C9AD269497E7187B /* UniConnectDictationRetention.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectDictationRetention.swift; sourceTree = "<group>"; };
+		FECCBFB5FBA37BAFFAD707C4 /* UniConnectDictationSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectDictationSearch.swift; sourceTree = "<group>"; };
+		A0CC2D9D93AB22668CF6E11C /* UniConnectDictationTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectDictationTarget.swift; sourceTree = "<group>"; };
+		A87927305DF0E5598D368899 /* UniConnectDictationTerminalBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectDictationTerminalBridge.swift; sourceTree = "<group>"; };
+		24FE9D59C010B5EFCD0B33CA /* UniConnectDictationTerminals.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectDictationTerminals.swift; sourceTree = "<group>"; };
+		ABB2EB2216F690EFA7E6885A /* UniConnectDictationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectDictationTests.swift; sourceTree = "<group>"; };
+		2582D6DDAD484770CA20A9F6 /* UniConnectDictationTranscribing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectDictationTranscribing.swift; sourceTree = "<group>"; };
 		A7D15C0000000000000000A1 /* UniConnectDisconnectedTitle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectDisconnectedTitle.swift; sourceTree = "<group>"; };
 		A7D15C0000000000000000B1 /* UniConnectDisconnectedTitleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectDisconnectedTitleTests.swift; sourceTree = "<group>"; };
 		D1320AA0D1320AA0D1320AA5 /* UniConnectDockTilePlugin.plugin */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = UniConnectDockTilePlugin.plugin; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -2297,6 +2355,32 @@
 				A34C4EC6543DDA904728BBDB /* UniConnectAccountsWindowController.swift */,
 				F9E03B50FCB15A421D33300E /* UniConnectAccountsSnapshot+MobilePayload.swift */,
 				3371F7D4E7CF447F7CCB7E5A /* UniConnectCoordinator+Accounts.swift */,
+				C011DD4575E3659AD422B687 /* UniConnectCoordinator+Dictation.swift */,
+				A87927305DF0E5598D368899 /* UniConnectDictationTerminalBridge.swift */,
+				0C825C956B3E6EBD5A6D6501 /* UniConnectDictationPanelController.swift */,
+				99A9585DA30E9B975D52BE30 /* UniConnectDictationLevelBar.swift */,
+				8CCBCB28B5AF91D321104CE1 /* UniConnectDictationBoxView.swift */,
+				8F5206D6F080FAFB09CCAD9A /* UniConnectDictationHistoryRowView.swift */,
+				FE7C721F39090D6D80F0510C /* UniConnectDictationBubbleHostView.swift */,
+				5EAB7BB3506333984FA9D27B /* UniConnectDictationPanel.swift */,
+				5AF534CE427C98912682B0F6 /* UniConnectDictationBubbleView.swift */,
+				A60BDF900E6E1234AB8539C4 /* UniConnectDictationClock.swift */,
+				05BA97A1443EA82266806258 /* UniConnectDictationBubbleState.swift */,
+				E4D4A37027770E6599E48C06 /* UniConnectDictationBubbleLayout.swift */,
+				0F3F4DFA9D6B6292DFAC7BCD /* UniConnectDictationModel.swift */,
+				44D62D184B772E24E289B9BB /* UniConnectDictationAudioPlayer.swift */,
+				DA1510FC345E66D5398F43D1 /* UniConnectDictationPlaying.swift */,
+				38BB36B2A46252C929B6F454 /* UniConnectDictationAudioRecorder.swift */,
+				A15BF81D7EBEB296D3BD663B /* UniConnectDictationRecorderError.swift */,
+				B7067D6C952252DA43041215 /* UniConnectDictationRecording.swift */,
+				98436AD3148D328F39DFBDF7 /* UniConnectDictationHistoryStore.swift */,
+				24FE9D59C010B5EFCD0B33CA /* UniConnectDictationTerminals.swift */,
+				A0CC2D9D93AB22668CF6E11C /* UniConnectDictationTarget.swift */,
+				373930DA092D98F16D0DB584 /* UniConnectDictationLanguage.swift */,
+				FECCBFB5FBA37BAFFAD707C4 /* UniConnectDictationSearch.swift */,
+				3FEDB841C9AD269497E7187B /* UniConnectDictationRetention.swift */,
+				84032D50DB153D889EBB3692 /* UniConnectDictationRecord.swift */,
+				2582D6DDAD484770CA20A9F6 /* UniConnectDictationTranscribing.swift */,
 				616F030888C108BF4848FB9A /* UniConnectWindowDetailsModel.swift */,
 				AADF0C39F1DD4647AE29A454 /* UniConnectWindowDetailsSnapshot.swift */,
 				BF0DB9DE30EDA72C95F9CBFD /* UniConnectWindowDetailsRows.swift */,
@@ -2579,6 +2663,8 @@
 				36EF6FB2EFCA151569A6F11A /* MobileTranscriptionProcessRunning.swift */,
 				771B192627475FC34AE7FED5 /* MobileTranscriptionRequest.swift */,
 				9B4AC74967E58DD505DF467B /* MobileTranscriptionService.swift */,
+				51E9885CD0BAC4AA0C95DE7D /* MobileTranscriptionService+Dictation.swift */,
+				AEEAE41C1CD1954BEB2B89E9 /* MobileTranscriptionLimits+MacDictation.swift */,
 				78BAA3B8C57C7203FA781FBA /* MobileTranscriptionSpawn.swift */,
 				EDF5457FA60A6AC4BDB2E779 /* MobileTranscriptionSpawner.swift */,
 				1E33B90AD5585E1135552691 /* MobileTranscriptionToolchain.swift */,
@@ -3232,6 +3318,7 @@
 				4E5F60720000000000000002 /* NotificationSoundSettingsTests.swift */,
 				42092CDB2109E250F7F2A76E /* TabManagerUnitTests.swift */,
 				41777CC1F441E625114CF7B1 /* MobileFilePutServiceTests.swift */,
+				ABB2EB2216F690EFA7E6885A /* UniConnectDictationTests.swift */,
 				31064D23F9E8777B9989FAFF /* MobileInboxServiceTests.swift */,
 				41777CC1F441E625114CFRL1 /* UniConnectRelaunchOperationStoreTests.swift */,
 				B72E5A0C81D6470FA33EBRL2 /* UniConnectRelaunchInventoryTests.swift */,
@@ -3976,6 +4063,7 @@
 				46295499EA2390A1C218A403 /* MobileTranscriptionAvailability.swift in Sources */,
 				9DF4852544031C6B0CA7D937 /* MobileTranscriptionError.swift in Sources */,
 				28E99D7BB783F0B9B17CC94B /* MobileTranscriptionJob.swift in Sources */,
+				77FFFA7358EF492759603F7B /* MobileTranscriptionLimits+MacDictation.swift in Sources */,
 				F15F995EEA5E70268D317C1B /* MobileTranscriptionLimits.swift in Sources */,
 				D949CA731C6CB49EB6984A80 /* MobileTranscriptionOutcome.swift in Sources */,
 				CF84F0A7FD82B07402A64603 /* MobileTranscriptionProcessHandle.swift in Sources */,
@@ -3983,6 +4071,7 @@
 				63A83561D8BFD6EFA3490D65 /* MobileTranscriptionProcessRunner.swift in Sources */,
 				4B5C5A7A2056FEA0AF97352A /* MobileTranscriptionProcessRunning.swift in Sources */,
 				3F68222E28153AC0E0B7BC1D /* MobileTranscriptionRequest.swift in Sources */,
+				88DF4743C697BC1EC352716D /* MobileTranscriptionService+Dictation.swift in Sources */,
 				0E57E993EB2408D567BDE499 /* MobileTranscriptionService.swift in Sources */,
 				6812B98A9774E429DBADBF81 /* MobileTranscriptionSpawn.swift in Sources */,
 				EDB39055BF39DD53FFB8D392 /* MobileTranscriptionSpawner.swift in Sources */,
@@ -4181,10 +4270,36 @@
 				D26B20000000000000000021 /* UniConnectClaudeUpdateHostID.swift in Sources */,
 				D26B20000000000000000032 /* UniConnectControlledProcessRunner.swift in Sources */,
 				C37968F3598625929F94C75A /* UniConnectCoordinator+Accounts.swift in Sources */,
+				349CB63B5D8EFEF4CC846951 /* UniConnectCoordinator+Dictation.swift in Sources */,
 				B25547160DB5CC546C7261A7 /* UniConnectCoordinator+RemoteAgents.swift in Sources */,
 				9DC5393D7A8B5709EFD12F5C /* UniConnectCoordinator+WindowDetails.swift in Sources */,
 				C0FFEE0600000000000000B1 /* UniConnectCoordinator.swift in Sources */,
 				B0C10E0000000000000000B1 /* UniConnectCreatedWindowPersistence.swift in Sources */,
+				631C5AEE3674B3339BE86611 /* UniConnectDictationAudioPlayer.swift in Sources */,
+				E1303FCF87911B75D6874DF4 /* UniConnectDictationAudioRecorder.swift in Sources */,
+				0838B81B222C12B29C7E4C8E /* UniConnectDictationBoxView.swift in Sources */,
+				449A1162C7CDE020BE57C055 /* UniConnectDictationBubbleHostView.swift in Sources */,
+				43F05865413A14D20839F907 /* UniConnectDictationBubbleLayout.swift in Sources */,
+				C1F1EC5CD4F24CAE5E77EA3D /* UniConnectDictationBubbleState.swift in Sources */,
+				C220B035E1C0F9FC884190A4 /* UniConnectDictationBubbleView.swift in Sources */,
+				AD7A7B7C973236C7755DCB40 /* UniConnectDictationClock.swift in Sources */,
+				71F14B3E4DC8CD3FEC2B7000 /* UniConnectDictationHistoryRowView.swift in Sources */,
+				4A1480F41BCF2645045D6314 /* UniConnectDictationHistoryStore.swift in Sources */,
+				5C4467C47EF018EB23D6CC26 /* UniConnectDictationLanguage.swift in Sources */,
+				0650B301C727C7EF229E9162 /* UniConnectDictationLevelBar.swift in Sources */,
+				EB9EACA4F1F893D45D96B5CC /* UniConnectDictationModel.swift in Sources */,
+				D91D83BD2FFE17A11E03286C /* UniConnectDictationPanel.swift in Sources */,
+				D5B88C656AFD343FD5DC1C00 /* UniConnectDictationPanelController.swift in Sources */,
+				DFAB287CCF448659A6C2CEE3 /* UniConnectDictationPlaying.swift in Sources */,
+				3C864034570DC57C4612F86E /* UniConnectDictationRecord.swift in Sources */,
+				E3B47D347FA9E1B3731B4E75 /* UniConnectDictationRecorderError.swift in Sources */,
+				48A3E8BA728E00FDA6854A77 /* UniConnectDictationRecording.swift in Sources */,
+				2C31B9EB03D094829E2C5A79 /* UniConnectDictationRetention.swift in Sources */,
+				531393D4F29C9FDE435C37EA /* UniConnectDictationSearch.swift in Sources */,
+				2FB85E50E05B4D46D8DD9E05 /* UniConnectDictationTarget.swift in Sources */,
+				805AEAAFE0C80F8B4BB1D1B3 /* UniConnectDictationTerminalBridge.swift in Sources */,
+				9B10DB2BA6BE5024B27E9341 /* UniConnectDictationTerminals.swift in Sources */,
+				BAEA13A7E446A53BB7ECD841 /* UniConnectDictationTranscribing.swift in Sources */,
 				A7D15C0000000000000000A2 /* UniConnectDisconnectedTitle.swift in Sources */,
 				D27020000000000000000001 /* UniConnectDocumentReconciler.swift in Sources */,
 				D27020000000000000000002 /* UniConnectExistingTmuxRequirement.swift in Sources */,
@@ -4654,6 +4769,7 @@
 				C1A0DE310000000000000001 /* UniConnectClaudeBridgeMaintenanceTests.swift in Sources */,
 				D26B40000000000000000005 /* UniConnectControlledProcessRunnerTests.swift in Sources */,
 				B0C10E000000000000000E00 /* UniConnectCreatedWindowPersistenceTests.swift in Sources */,
+				2D2650A60F2113E83D53FF5E /* UniConnectDictationTests.swift in Sources */,
 				A7D15C0000000000000000B2 /* UniConnectDisconnectedTitleTests.swift in Sources */,
 				C0FFEE7900000000000000B1 /* UniConnectImportPlannerTests.swift in Sources */,
 				D27040000000000000000001 /* UniConnectImportTransactionTests.swift in Sources */,

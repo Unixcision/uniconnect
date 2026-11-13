@@ -103,6 +103,43 @@ actor MobileTranscriptionService {
             throw MobileTranscriptionError.unsupported(Self.noModelMessage)
         }
         let request = try limits.validate(base64: base64, mime: mime, language: language, device: device)
+        return try await run(request, toolchain: toolchain, model: model, connectionID: connectionID, startedAt: startedAt)
+    }
+
+    /// Transcribe un clip grabado en este mismo equipo (el botón de dictado del Mac).
+    ///
+    /// Es el mismo camino que el del móvil, sin base64 ni conexión: mismo motor, mismo modelo y
+    /// la misma limpieza de temporales. Los límites son los de esta instancia.
+    ///
+    /// - Parameters:
+    ///   - audio: El clip completo.
+    ///   - mime: Su formato (`audio/mp4` para lo que graba el Mac).
+    ///   - language: `"es"`, `"en"` o `nil` para detección automática.
+    /// - Returns: Texto, motor, duración medida y lo que tardó.
+    /// - Throws: ``MobileTranscriptionError``.
+    func transcribe(audio: Data, mime: String, language: String?) async throws -> MobileTranscriptionOutcome {
+        let startedAt = ContinuousClock.now
+        sweepOnceAtStart()
+        retryPendingCleanup()
+        let toolchain = resolveToolchain()
+        guard toolchain.whisperCLI != nil else {
+            throw MobileTranscriptionError.unsupported(Self.noEngineMessage)
+        }
+        guard let model = resolveModel() else {
+            throw MobileTranscriptionError.unsupported(Self.noModelMessage)
+        }
+        let request = try limits.validate(audio: audio, mime: mime, language: language)
+        return try await run(request, toolchain: toolchain, model: model, connectionID: nil, startedAt: startedAt)
+    }
+
+    private func run(
+        _ request: MobileTranscriptionRequest,
+        toolchain: MobileTranscriptionToolchain,
+        model: URL,
+        connectionID: UUID?,
+        startedAt: ContinuousClock.Instant
+    ) async throws -> MobileTranscriptionOutcome {
+        let device = request.device
         guard admission.admit(device: device) else {
             throw MobileTranscriptionError.busy
         }

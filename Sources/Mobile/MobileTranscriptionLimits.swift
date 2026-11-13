@@ -89,13 +89,40 @@ struct MobileTranscriptionLimits: Equatable, Sendable {
         guard let audio = Self.decode(compact), !audio.isEmpty else {
             throw MobileTranscriptionError.invalidParams(Self.invalidAudioMessage)
         }
+        return try validate(audio: audio, format: format, language: normalizedLanguage, device: device)
+    }
+
+    /// Valida un clip que ya está en binario: el que graba este mismo equipo.
+    ///
+    /// - Parameters:
+    ///   - audio: El clip completo.
+    ///   - mime: Su formato.
+    ///   - language: `"es"`, `"en"`, vacío o ausente.
+    /// - Returns: La petición validada, sin dispositivo.
+    /// - Throws: ``MobileTranscriptionError/invalidParams(_:)`` o ``MobileTranscriptionError/tooLarge``.
+    func validate(audio: Data, mime: String, language: String?) throws -> MobileTranscriptionRequest {
+        guard let format = MobileTranscriptionAudioFormat.parse(mime) else {
+            throw MobileTranscriptionError.invalidParams(Self.invalidAudioMessage)
+        }
+        guard !audio.isEmpty else {
+            throw MobileTranscriptionError.invalidParams(Self.invalidAudioMessage)
+        }
+        return try validate(audio: audio, format: format, language: Self.normalizeLanguage(language), device: nil)
+    }
+
+    private func validate(
+        audio: Data,
+        format: MobileTranscriptionAudioFormat,
+        language: String?,
+        device: String?
+    ) throws -> MobileTranscriptionRequest {
         guard audio.count <= maximumAudioBytes else {
             throw MobileTranscriptionError.tooLarge
         }
         return MobileTranscriptionRequest(
             audio: audio,
             format: format,
-            language: normalizedLanguage,
+            language: language,
             device: device
         )
     }

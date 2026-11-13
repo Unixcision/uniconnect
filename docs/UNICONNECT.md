@@ -766,6 +766,67 @@ Host side on macOS (2026-09-10, `Sources/Mobile/MobileTranscription*.swift`, rou
   segments whisper emits are joined into the single line the phone pastes into its
   composer.
 
+### Dictado on the Mac (floating button, 2026-11-13)
+
+The Mac has its own dictation box, read by the same engine as the phone's dictations.
+
+- **Button.** A floating round microphone starts at the bottom right of the screen's
+  visible area, over UniConnect's windows (also in full screen). It can be dragged to
+  either edge, at any height, and settles against the nearer edge. Dropped partly past
+  an edge, or with «Esconder el botón en el borde», it tucks itself in as a pill, the
+  way Android's edge handles do; clicking the pill brings the button back. A click on
+  the button starts recording without opening anything; the next one stops and opens
+  the box, where the text appears when Whisper is done. Option-click, the right-click
+  menu or `UniConnect › Dictado por voz…` open the box too, and it opens by itself when
+  starting failed (no microphone, a failure). The right-click menu can also hide the button altogether until
+  `UniConnect › Dictado por voz…` shows it again. The button's window is 10 pt larger than
+  the button on every side and has no window shadow: the button draws its own, so
+  growing on hover is never cut flat by the window's edges. Its place
+  is remembered (`uniconnect.dictation.*` defaults). Both panels are non-activating,
+  hide while UniConnect is not the active app, and hide while UniConnect is locked:
+  locking stops a recording in progress, keeps and transcribes it.
+- **Recording.** `AVAudioRecorder`, AAC in MPEG-4, mono, 16 kHz at 32 kbit/s (the
+  phone's format), up to 15 minutes; at the limit it stops by itself and goes on as if
+  the user had stopped it. The microphone permission is macOS's (`NSMicrophoneUsageDescription`
+  and `com.apple.security.device.audio-input` were already in the bundle); a refusal
+  is shown with a link to the Privacy pane. Under 0.4 s is a click by mistake and is
+  thrown away.
+- **Transcription.** The recording goes through `MobileTranscriptionService` (a second
+  instance with `MobileTranscriptionLimits.macDictation`: 16 MiB, 900 s, 420 s budget,
+  two at a time) via `transcribe(audio:mime:language:)`, the same job, `ffmpeg`
+  conversion, model choice and cleanup as `transcribe.v1`, without base64 or a
+  connection. Language: Spanish by default, English or detection from the box.
+- **Paste.** Stopping never pastes anything (Dani, 13-11: an automatic paste on stop
+  made him anxious, and the first live build, which pasted on stop, ended up pasting
+  each dictation twice because the box still offered a prominent «Pegar»). When Whisper
+  answers, the text waits in the box as the last dictation, editable, with «Pegar»,
+  «Pegar y enviar» and «Copiar». «Pegar» pastes, without Enter, into the terminal that
+  has the keyboard in UniConnect's front window (`TerminalPanel.sendText`, the socket's
+  paste path, bracketed when the program asked for it). «Pegar y enviar» then presses
+  Enter as a keypress of its own 150 ms later (the phone's rule: Return is never the
+  tail of a paste, or the TUI takes it as part of the paste). Once the last dictation
+  was pasted the box offers «Enviar», which only presses Enter in that same terminal,
+  and «Pegar otra vez», so the same text is not pasted twice by mistake. After any
+  paste the keyboard goes back to UniConnect's window if the box had it, so Enter
+  reaches the terminal.
+- **Box.** A small window with a hidden title bar: dragged by its header or any empty
+  part, resized by its edges (at least 360×440), and kept where the user left it
+  (`uniconnect.dictation.boxFrame`) instead of following the button, until «Colocar la
+  caja junto al botón» in the button's menu.
+- **History.** Every recording is kept before Whisper reads it, so nothing said is
+  lost to a failure: `~/Library/Application Support/UniConnect/dictados/`, folder
+  0700, one `<id>.m4a` per dictation and `indice.json` (0600) written whole on every
+  change, newest first, with text, state (`transcribing`/`done`/`unread`), length and
+  the window it was pasted into. The phone's retention applies: 200 dictations and
+  300 MiB of audio, audio going first, oldest first, and the text staying. An entry
+  still being read when the app quit comes back unread with its audio; a recording
+  cut off by a crash is never finalized and is removed. From the box each entry can be
+  pasted, copied, played, read again and deleted, and the history searched (every
+  word, any order, no case or accents, pieces of words).
+- **Linux.** Not built: the request was scoped to the Mac, and the MINIPC has no
+  whisper.cpp or model. The history format and the pieces above are the ones to reuse
+  if Linux gets the button.
+
 ### ローカルウインドウの作成と保存
 
 ショートカット、タブの追加ボタン、コマンドパレット、コンテキストメニューの

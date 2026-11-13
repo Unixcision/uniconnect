@@ -1988,6 +1988,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         prepareStartupSessionSnapshotIfNeeded()
         startSessionAutosaveTimerIfNeeded()
         UniConnectAppLock.shared.presentLaunchGate()
+        if !isRunningUnderXCTestCached {
+            UniConnectCoordinator.shared.startDictation()
+        }
 #if DEBUG
         setupJumpUnreadUITestIfNeeded()
         setupTerminalCmdClickUITestIfNeeded()

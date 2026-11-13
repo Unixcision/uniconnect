@@ -46549,6 +46549,732 @@
           }
         }
       }
+    },
+    "uniconnect.dictation.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dictado"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.moveHint": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arrastra desde aquí para mover la caja; los bordes la agrandan o la encogen"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.language": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Idioma"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.options.language": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Idioma"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.dock": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esconder el botón en el borde"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.close": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cerrar"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.stop": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Terminar y transcribir"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.record": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grabar"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.discard": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Descartar"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.status.idle": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pulsa para grabar. Lo transcribe Whisper en este Mac."
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.status.access": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esperando el permiso del micrófono…"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.status.recording": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grabando… pulsa para terminar (máx. 15 min)."
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.status.transcribing": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transcribiendo con Whisper…"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.openMicrophoneSettings": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abrir Ajustes del Sistema"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.last": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Último dictado"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.state.transcribing": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transcribiendo…"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.last.empty": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin texto"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.send": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enviar"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.send.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ya está pegado en la terminal: pulsa Enter allí, sin pegarlo otra vez"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.pasteAgain": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pegar otra vez"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.pasteAgain.help.v2": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ya está pegado; esto lo pega de nuevo en la terminal enfocada"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.paste.short": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pegar"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.paste.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pegar en la terminal enfocada, sin Enter"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.pasteAndSend": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pegar y enviar"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.pasteAndSend.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pegar en la terminal enfocada y pulsar Enter"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.copy": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copiar"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.history": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Historial"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.search": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buscar en el historial"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.history.empty": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aquí quedan tus dictados, con su texto y su audio."
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.history.noMatch": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ningún dictado coincide con la búsqueda."
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.history.note.one": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 dictado · %@ de audio"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.history.note": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld dictados · %2$@ de audio"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.notice.pasted": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pegado en «%@», sin Enter."
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.notice.sent": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enviado en «%@»."
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.notice.copied": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copiado."
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.notice.noTerminal": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No hay ninguna terminal enfocada: el texto queda aquí y en el historial."
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.notice.microphoneDenied": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "UniConnect no tiene permiso para usar el micrófono. Actívalo en Ajustes del Sistema › Privacidad y seguridad › Micrófono."
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.notice.cut": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La grabación llegó a los 15 minutos y se paró sola."
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.notice.notUnderstood": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whisper no entendió nada. El audio queda en el historial."
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.notice.tooShort": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grabación demasiado corta; no se guardó."
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.stopAudio": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Parar"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.playAudio": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escuchar"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.retranscribe": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Volver a transcribir"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.noAudio": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin audio"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.delete": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Borrar el dictado y su audio"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.pastedInto": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "en %@"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.state.unread": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin transcribir: escúchalo o vuelve a transcribirlo"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.state.unreadHelp": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whisper no pudo leerlo"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.today": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hoy, %@"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.yesterday": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ayer, %@"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.language.es": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Español"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.language.en": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inglés"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.language.auto": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Detectar idioma"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.error.tooLong": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La grabación pasa de 15 minutos. El audio queda en el historial."
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.error.busy": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whisper está ocupado con otro dictado. Vuelve a transcribirlo desde el historial en unos segundos."
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.error.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo transcribir. El audio queda en el historial."
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.error.couldNotRecord": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo empezar a grabar. Comprueba que el Mac tiene un micrófono disponible."
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.error.couldNotKeep": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo guardar la grabación en el historial."
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.pill.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dictado: pulsa para sacar el botón"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.bubble.help.v3": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dictado: clic para grabar y otro para parar; el texto te espera en la caja para pegarlo. ⌥-clic o clic derecho: historial y opciones. Arrástralo al borde para esconderlo."
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.menu.undock": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sacar el botón"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.menu.closeBox": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cerrar la caja de dictado"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.menu.openBox.v2": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abrir la caja y el historial"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.menu.placeBox": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Colocar la caja junto al botón"
+          }
+        }
+      }
+    },
+    "uniconnect.dictation.menu.hide": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ocultar el botón (vuelve con UniConnect › Dictado por voz…)"
+          }
+        }
+      }
+    },
+    "menu.app.dictation": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dictado por voz…"
+          }
+        }
+      }
     }
   }
 }
