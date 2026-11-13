@@ -153,3 +153,33 @@ Ajustes, sin modificar las autorizaciones del dispositivo ni el bloqueo.
 Un repositorio y un producto: los cambios se revisan para Mac y Linux. Se comparte
 la lógica y los recursos, y se separa solo lo que depende del sistema. El port
 actual aún tiene lógica duplicada; su convergencia es trabajo pendiente explícito.
+
+### Guardado, consumo y bloqueo (13-11-2026)
+
+En macOS los títulos automáticos se recogen en el guardado periódico de ocho
+segundos. Los cambios persistentes solicitan un guardado inmediato y agrupan los
+siguientes con un intervalo mínimo de dos segundos; el cierre conserva su
+guardado final. La captura de modelos y superficies sigue en el hilo principal;
+la lectura de índices, la preparación persistente y la escritura se realizan
+fuera de él. El catálogo inmutable de reanudación se decodifica una sola vez y
+los guardados sin historial no construyen órdenes de arranque.
+
+En ambos escritorios la reconciliación local periódica de agentes pasa a treinta
+segundos, conservando las solicitudes explícitas inmediatas. macOS toma dos
+instantáneas de paneles por socket para comprobar su identidad antes y después
+de examinar procesos; las comprobaciones de autorización de entrada siguen
+siendo independientes. Linux evita reescribir un estado idéntico, pero comprueba
+la revisión del archivo incluso en ese caso. Ambos adaptadores evitan preparar
+copias programadas que todavía no corresponden, sin alterar las copias manuales.
+
+La visibilidad de Ghostty se comunica al renderizador cuando se oculta o minimiza
+una superficie y se restablece al mostrarla. No se detienen los procesos, la
+salida del terminal ni tmux. Linux usa GTK/VTE y no participa en este enlace de
+Ghostty.
+
+El arreglo del bloqueo es específico de AppKit y LocalAuthentication: controles
+nativos identificables por el filtro de acciones, ventanas de nivel normal,
+cancelación de intentos retirados y cierre que espera los índices sin bloquear
+el hilo principal. Linux mantiene el cifrado sin pedir contraseña al arrancar;
+no usa este modal ni cambia su política de acceso. Las pruebas de Linux no
+validan el diálogo de Touch ID de macOS.

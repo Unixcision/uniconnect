@@ -6,7 +6,7 @@ import LocalAuthentication
 //
 // UniConnect refuses to show anything until macOS authenticates the owner.
 // Locking never touches the underlying workspaces: terminals, SSH and tmux keep
-// running; the lock is a full-screen borderless window above everything.
+// running; the lock covers this app without floating over other applications.
 
 /// Seam over `LAContext` so the lock flow can be exercised without biometric hardware.
 protocol UniConnectAuthenticating {
@@ -434,6 +434,9 @@ final class UniConnectAppLock: ObservableObject {
 
     private func applicationBecameActive() {
         guard isLocked else { return }
+        // LocalAuthentication owns focus while its system panel is pending. Raising a
+        // cover here can steal that focus and immediately cancel the new evaluation.
+        guard !isAuthenticating, !terminationRequested else { return }
         for window in lockWindows {
             window.level = .normal
             window.orderFront(nil)
