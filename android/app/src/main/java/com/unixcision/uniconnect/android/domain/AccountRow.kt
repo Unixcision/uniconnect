@@ -32,8 +32,9 @@ data class AccountRow(val machineID: String, val machineName: String, val window
             AccountWindowState.OK -> {
                 val address = email
                 when {
-                    // Con clave de API, Bedrock, Vertex o Foundry se enseña el método, no un email.
-                    method != null -> AccountLabel.Method(method)
+                    // Con clave de API, Bedrock, Vertex o Foundry se enseña el método, no un email. Un
+                    // token de setup-token con su correo asociado es esa cuenta, y se enseña el correo.
+                    method != null && (method != AccountMethod.SETUP_TOKEN || address == null) -> AccountLabel.Method(method)
                     address != null -> AccountLabel.Email(address, AccountPalette.indexOf(address))
                     else -> AccountLabel.Status(AccountStatus.NO_EMAIL, window.account?.osUser)
                 }

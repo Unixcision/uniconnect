@@ -866,6 +866,7 @@
     <string name="accounts_method_bedrock">Bedrock</string>
     <string name="accounts_method_vertex">Vertex</string>
     <string name="accounts_method_foundry">Foundry</string>
+    <string name="accounts_method_setup_token">Token sin asociar</string>
     <string name="accounts_group_no_session">Sin sesión</string>
     <string name="accounts_group_unread">Sin leer</string>
     <string name="accounts_group_without_agent">Ventanas sin IA</string>

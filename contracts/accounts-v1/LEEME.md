@@ -57,7 +57,7 @@ Mac y Linux la ejecutan igual:
 "account": {
   "state": "ok" | "sin_sesion" | "no_legible" | "desconocida",
   "email": "dev@notbetting.com" | null,
-  "method": "oauth" | "chatgpt" | "api_key" | "bedrock" | "vertex" | "foundry" | null,
+  "method": "oauth" | "chatgpt" | "api_key" | "setup_token" | "bedrock" | "vertex" | "foundry" | null,
   "plan": "Ultra" | "Max" | "Pro" | ... | null,
   "organization": "..." | null,
   "os_user": "root" | null,
@@ -76,12 +76,28 @@ Mac y Linux la ejecutan igual:
 - `HOME`, `CLAUDE_CONFIG_DIR` y `CODEX_HOME`: rutas absolutas;
 - `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `OPENAI_API_KEY` y `CLAUDE_CODE_USE_*`: solo si
   están puestas. **El valor de un secreto no sale nunca de la sonda.**
+- `CLAUDE_CODE_OAUTH_TOKEN` (token de `claude setup-token`, p. ej. el alias `claude-kin`): solo su
+  **huella**, los 16 primeros hex de su SHA-256, la misma que calcula la barra de estado
+  (`printf '%s' "$tok" | openssl dgst -sha256 | cut -c1-16`). En el entorno de la sonda esa clave
+  lleva la huella, nunca el token.
 
 Si el entorno no se puede leer, vale el HOME del usuario dueño del proceso.
 
 **Claude** (`provider: claude`):
 1. Con `CLAUDE_CODE_USE_BEDROCK`, `_VERTEX` o `_FOUNDRY` activo: `ok`, `method` con ese
    proveedor y sin email.
+1b. Con huella de `CLAUDE_CODE_OAUTH_TOKEN` (decisión de Dani, 14-11-2026): paga la cuenta del token,
+   **no** la de `.claude.json`, que es el login normal y no se mira. `ok`, `method: setup_token` y
+   `config` = `$HOME/.claude/cuentas-token`, el mapa que mantiene Dani, una línea
+   `<huella> <correo>` por token, con `#` para comentarios. Es el mismo que usa la barra de estado.
+   - Si la huella está en el mapa: `email` es ese correo, en minúsculas. El uso sale de
+     `uniconnect-uso-<huella>.json` en la carpeta de Claude (`CLAUDE_CONFIG_DIR` o `~/.claude`), que
+     escribe la barra por cada token. Si no lo hay, se mira `uniconnect-uso.json` con la regla de
+     siempre: solo si es de ese correo.
+   - Si la huella no está, o no hay mapa: `email: null` y se pinta «Token sin asociar». Nunca se le
+     atribuye el login de `.claude.json`.
+   - Mapa sin permiso de lectura: `no_legible`.
+   - El token no tiene permiso para preguntar de quién es, y aquí no se llama a ninguna API.
 2. Fichero: `$CLAUDE_CONFIG_DIR/.claude.json` si existe la variable; si no, `$HOME/.claude.json`.
    - Sin permiso de lectura: `no_legible`.
 3. Con `oauthAccount.emailAddress`: `ok`, `method: oauth` y `email` en minúsculas.
@@ -101,6 +117,9 @@ Si el entorno no se puede leer, vale el HOME del usuario dueño del proceso.
   `ok` y `method: chatgpt`.
 - Si no hay email pero sí `OPENAI_API_KEY`, en el fichero o en el entorno: `ok` y `api_key`.
 - Si no hay nada: `sin_sesion`. Sin permiso de lectura: `no_legible`.
+
+Casos en `sonda-cuentas.json`: `claude_setup_token_asociado`, `claude_setup_token_sin_asociar` y
+`claude_setup_token_sin_mapa`.
 
 **agy, grok y cualquier otro:** `desconocida`, porque UniConnect no sabe dónde guardan la cuenta.
 Se pinta «Cuenta no expuesta». No se adivina.

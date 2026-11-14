@@ -1,9 +1,14 @@
 """accounts-v1: la cuenta de cada IA, con los casos de contracts/accounts-v1/sonda-cuentas.json."""
 
+import hashlib
 import io
 import json
+import os
 from pathlib import Path
+import shutil
+import subprocess
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -27,6 +32,18 @@ def file_reader(ficheros):
     return read
 
 
+def text_reader(ficheros):
+    """``read_text`` falso, para los ficheros de texto (``texto``) como ``cuentas-token``."""
+    def read(path):
+        entry = ficheros.get(path)
+        if entry is None or (entry["estado"] == "ok" and "texto" not in entry):
+            return ("absent", None)
+        if entry["estado"] == "ok":
+            return ("ok", entry["texto"])
+        return (entry["estado"], None)
+    return read
+
+
 class AccountContractCaseTests(unittest.TestCase):
     """Cada caso de sonda-cuentas.json da exactamente su ``espera``, y ningún secreto sale."""
 
@@ -37,7 +54,8 @@ class AccountContractCaseTests(unittest.TestCase):
             with self.subTest(caso=case["nombre"]):
                 user = tuple(case["usuario"])
                 result = account_of(case["provider"], case["uid"], case["entorno"], file_reader(case["ficheros"]),
-                                    lambda uid, user=user: user, data["read_at"])
+                                    lambda uid, user=user: user, data["read_at"],
+                                    read_text=text_reader(case["ficheros"]))
                 self.assertEqual(result, case["espera"])
                 self.assertNotIn("NO-SALE", json.dumps(result))
                 self.assertNotIn("no-sale", json.dumps(result))
@@ -77,6 +95,50 @@ class UsageContractCaseTests(unittest.TestCase):
         calls.clear()
         none = account_of("claude", 0, {"HOME": "/x"}, lambda path: ("absent", None), lambda uid: ("x", "/x"), "t", usage_of)
         self.assertEqual((none["state"], none["usage"], calls), ("sin_sesion", None, []))
+
+
+class SetupTokenTests(unittest.TestCase):
+    """Una Claude con token de setup-token sale con la cuenta del token, y el token no sale nunca."""
+
+    TOKEN = "sk-ant-oat01-NO-SALE-prueba"
+
+    def test_fingerprint_is_the_one_the_status_line_computes(self):
+        if not shutil.which("openssl"):
+            self.skipTest("sin openssl")
+        status_line = subprocess.run(["openssl", "dgst", "-sha256", "-r"], input=self.TOKEN.encode(),
+                                     stdout=subprocess.PIPE, check=True).stdout.decode()[:16]
+        self.assertEqual(agent_probe.token_fingerprint(self.TOKEN.encode()), status_line)
+
+    def test_a_live_process_leaves_only_its_fingerprint(self):
+        environment = dict(os.environ, CLAUDE_CODE_OAUTH_TOKEN=self.TOKEN, HOME="/home/prueba")
+        # El propio intérprete y no `sleep`: macOS 27 no enseña el entorno de los binarios de Apple.
+        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"], env=environment)
+        try:
+            values = agent_probe.HostReader().account_environment(child.pid)
+        finally:
+            child.kill()
+            child.wait()
+        if values is None or values.get("HOME") != "/home/prueba":
+            self.skipTest("este sistema no deja leer el entorno de ese proceso (binario de Apple en macOS)")
+        self.assertEqual(values.get("CLAUDE_CODE_OAUTH_TOKEN"), hashlib.sha256(self.TOKEN.encode()).hexdigest()[:16])
+        self.assertNotIn("NO-SALE", json.dumps(values))
+
+    def test_usage_comes_from_the_token_file_of_that_account(self):
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder)
+        huella = agent_probe.token_fingerprint(self.TOKEN.encode())
+        limits = {"seven_day": {"used_percentage": 21, "resets_at": 1794650400}}
+        Path(folder, "uniconnect-uso-%s.json" % huella).write_text(json.dumps(
+            {"version": 1, "email": "unixcision@gmail.com", "observed_at": "2026-11-14T13:13:39Z", "rate_limits": limits}))
+        Path(folder, "uniconnect-uso.json").write_text(json.dumps(
+            {"version": 1, "email": "subs@iberiavo.com", "observed_at": "2026-11-14T13:34:02Z",
+             "rate_limits": {"seven_day": {"used_percentage": 80, "resets_at": 1794650400}}}))
+        reader = agent_probe.HostReader()
+        usage = reader.usage_of("claude", folder, "unixcision@gmail.com", environment={"CLAUDE_CODE_OAUTH_TOKEN": huella})
+        self.assertEqual([limit["used_percent"] for limit in usage["limits"]], [21.0])
+        # El fichero común es de otra cuenta: no se le atribuye a la del token.
+        other = agent_probe.HostReader().usage_of("claude", folder, "unixcision@gmail.com", environment={})
+        self.assertIsNone(other)
 
 
 class ProbeAccountsFlagTests(unittest.TestCase):
@@ -148,6 +210,24 @@ class ProbeAccountsFlagTests(unittest.TestCase):
                                    "organization": None, "os_user": "root", "config": "/root/.claude.json",
                                    "read_at": "2026-11-10T12:30:04Z", "usage": None})
         self.assertEqual(reader.environments, [11])
+
+    def test_with_flag_a_token_session_carries_the_token_account(self):
+        huella = agent_probe.token_fingerprint(b"sk-ant-oat01-NO-SALE")
+
+        class Reader(self.Reader):
+            def account_environment(self, pid):
+                self.environments.append(pid)
+                return {"HOME": "/root", "CLAUDE_CODE_OAUTH_TOKEN": huella}
+
+            def read_account_text(self, path):
+                return ("ok", "%s kin@example.com\n" % huella) if path == "/root/.claude/cuentas-token" else ("absent", None)
+
+        reader, out = Reader(), io.StringIO()
+        self.assertEqual(agent_probe.main(["--socket", "default", "--accounts"], reader=reader, stdout=out, now=self.NOW), 0)
+        account = json.loads(out.getvalue())["sessions"][0]["agent"]["account"]
+        self.assertEqual((account["state"], account["method"], account["email"], account["config"]),
+                         ("ok", "setup_token", "kin@example.com", "/root/.claude/cuentas-token"))
+        self.assertNotIn("NO-SALE", out.getvalue())
 
     def test_unknown_option_is_still_misuse(self):
         self.assertIsNone(agent_probe.parse_arguments(["--accounts=yes"]))

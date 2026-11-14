@@ -419,6 +419,122 @@
         "read_at": "2026-11-10T12:30:04Z",
         "usage": null
       }
+    },
+    {
+      "nombre": "claude_setup_token_asociado",
+      "descripcion": "Claude con CLAUDE_CODE_OAUTH_TOKEN: paga la cuenta del token, no la del login de .claude.json. En el entorno de la sonda la variable lleva la huella (16 hex de su SHA-256), nunca el token; el correo sale de ~/.claude/cuentas-token.",
+      "provider": "claude",
+      "uid": 1000,
+      "entorno": {
+        "HOME": "/home/dani",
+        "CLAUDE_CODE_OAUTH_TOKEN": "419771f15af68959"
+      },
+      "usuario": [
+        "dani",
+        "/home/dani"
+      ],
+      "ficheros": {
+        "/home/dani/.claude.json": {
+          "estado": "ok",
+          "json": {
+            "oauthAccount": {
+              "emailAddress": "subs@iberiavo.com",
+              "planDisplayName": "Ultra"
+            }
+          }
+        },
+        "/home/dani/.claude/cuentas-token": {
+          "estado": "ok",
+          "texto": "# Huella Correo\n# Lo escribe Dani a mano\n419771f15af68959 Unixcision@Gmail.com\n"
+        }
+      },
+      "espera": {
+        "state": "ok",
+        "plan": null,
+        "organization": null,
+        "os_user": "dani",
+        "read_at": "2026-11-10T12:30:04Z",
+        "usage": null,
+        "config": "/home/dani/.claude/cuentas-token",
+        "method": "setup_token",
+        "email": "unixcision@gmail.com"
+      }
+    },
+    {
+      "nombre": "claude_setup_token_sin_asociar",
+      "descripcion": "Un token que no está en el mapa: se sabe que va por token, pero no de quién es. Nunca se le atribuye el login de .claude.json.",
+      "provider": "claude",
+      "uid": 1000,
+      "entorno": {
+        "HOME": "/home/dani",
+        "CLAUDE_CODE_OAUTH_TOKEN": "dc231819b9fbdc58"
+      },
+      "usuario": [
+        "dani",
+        "/home/dani"
+      ],
+      "ficheros": {
+        "/home/dani/.claude.json": {
+          "estado": "ok",
+          "json": {
+            "oauthAccount": {
+              "emailAddress": "subs@iberiavo.com",
+              "planDisplayName": "Ultra"
+            }
+          }
+        },
+        "/home/dani/.claude/cuentas-token": {
+          "estado": "ok",
+          "texto": "419771f15af68959 unixcision@gmail.com\n"
+        }
+      },
+      "espera": {
+        "state": "ok",
+        "plan": null,
+        "organization": null,
+        "os_user": "dani",
+        "read_at": "2026-11-10T12:30:04Z",
+        "usage": null,
+        "config": "/home/dani/.claude/cuentas-token",
+        "method": "setup_token",
+        "email": null
+      }
+    },
+    {
+      "nombre": "claude_setup_token_sin_mapa",
+      "descripcion": "Sin ~/.claude/cuentas-token: igual que sin asociar.",
+      "provider": "claude",
+      "uid": 1000,
+      "entorno": {
+        "HOME": "/home/dani",
+        "CLAUDE_CODE_OAUTH_TOKEN": "419771f15af68959"
+      },
+      "usuario": [
+        "dani",
+        "/home/dani"
+      ],
+      "ficheros": {
+        "/home/dani/.claude.json": {
+          "estado": "ok",
+          "json": {
+            "oauthAccount": {
+              "emailAddress": "subs@iberiavo.com",
+              "planDisplayName": "Ultra"
+            }
+          }
+        }
+      },
+      "espera": {
+        "state": "ok",
+        "plan": null,
+        "organization": null,
+        "os_user": "dani",
+        "read_at": "2026-11-10T12:30:04Z",
+        "usage": null,
+        "config": "/home/dani/.claude/cuentas-token",
+        "method": "setup_token",
+        "email": null
+      }
     }
   ],
   "usos": [

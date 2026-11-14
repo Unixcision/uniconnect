@@ -90,6 +90,8 @@ struct UniConnectAccountsRowView: View {
         case .ok:
             switch window.account?.method {
             case "api_key": return String(localized: "uniconnect.accounts.method.apiKey", defaultValue: "Clave de API")
+            // A setup-token Claude whose token is not in ~/.claude/cuentas-token: by token, but whose is unknown.
+            case "setup_token": return String(localized: "uniconnect.accounts.method.setupToken", defaultValue: "Token sin asociar")
             case "bedrock": return "Bedrock"
             case "vertex": return "Vertex"
             case "foundry": return "Foundry"

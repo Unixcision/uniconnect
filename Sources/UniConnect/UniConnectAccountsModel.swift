@@ -339,6 +339,7 @@ final class UniConnectAccountsModel {
         case "#sin_sesion": String(localized: "uniconnect.accounts.filter.noSession", defaultValue: "Sin sesión")
         case "#sin_leer": String(localized: "uniconnect.accounts.filter.unread", defaultValue: "Sin leer")
         case "#method:api_key": String(localized: "uniconnect.accounts.method.apiKey", defaultValue: "Clave de API")
+        case "#method:setup_token": String(localized: "uniconnect.accounts.method.setupToken", defaultValue: "Token sin asociar")
         case "#method:bedrock": "Bedrock"
         case "#method:vertex": "Vertex"
         case "#method:foundry": "Foundry"

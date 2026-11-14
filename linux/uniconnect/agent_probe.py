@@ -52,6 +52,7 @@ Sale siempre con 0 e imprime una línea JSON (<= 256 KB); el mal uso sale con 2:
 import base64
 import binascii
 import datetime
+import hashlib
 import heapq
 import json
 import os
@@ -89,6 +90,10 @@ SEARCH_PATH = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 ACCOUNT_ENV_PATHS = ("HOME", "CLAUDE_CONFIG_DIR", "CODEX_HOME")
 ACCOUNT_ENV_FLAGS = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX",
                      "CLAUDE_CODE_USE_FOUNDRY", "OPENAI_API_KEY")
+# Token de «claude setup-token» (p. ej. el alias claude-kin): de él solo sale su huella, los 16 primeros
+# hex de su SHA-256, la misma que calcula la barra de estado para buscarlo en ~/.claude/cuentas-token.
+ACCOUNT_ENV_TOKEN = "CLAUDE_CODE_OAUTH_TOKEN"
+MAX_TOKEN_MAP = 64 * 1024
 MAX_ACCOUNT_FILE = 64 * 1024 * 1024
 CLAUDE_PLANS = {"claude_max": "Max", "claude_pro": "Pro", "claude_team": "Team", "claude_enterprise": "Enterprise"}
 
@@ -509,13 +514,28 @@ def jwt_claims(token):
     return value if isinstance(value, dict) else {}
 
 
-def account_of(provider, uid, environment, read_file, user_of, read_at, usage_of=None, pid=None):
+def token_fingerprint(token):
+    """La huella de un token: los 16 primeros hex de su SHA-256, como ``openssl dgst -sha256 | cut -c1-16``."""
+    return hashlib.sha256(token).hexdigest()[:16]
+
+
+def token_account(text, huella):
+    """El correo asociado a ``huella`` en ``~/.claude/cuentas-token`` (``<huella> <correo>`` por línea), o None."""
+    for line in text.splitlines():
+        fields = line.split()
+        if len(fields) >= 2 and not fields[0].startswith("#") and fields[0] == huella:
+            email = _text(fields[1], 320)
+            return email.lower() if email and "@" in email else None
+    return None
+
+
+def account_of(provider, uid, environment, read_file, user_of, read_at, usage_of=None, pid=None, read_text=None):
     """La cuenta de una IA en este momento (contracts/accounts-v1), sin caché.
 
     - ``environment``: rutas y banderas del entorno del proceso (``account_environment``) o None si
       no se pudo leer; entonces vale el HOME del usuario dueño del proceso.
     - ``read_file(ruta)``: ``("ok", dict)``, ``("absent", None)``, ``("denied", None)`` o
-      ``("invalid", None)``.
+      ``("invalid", None)``. ``read_text(ruta)`` igual, con el texto del fichero.
     - ``user_of(uid)``: ``(nombre, home)`` del usuario, o ``(None, None)``.
     - ``usage_of(proveedor, carpeta, email, pid, uid, entorno)``: el último uso de ESA cuenta
       (``usage``), o None. ``carpeta`` es la de Claude (``CLAUDE_CONFIG_DIR`` o ``~/.claude``) o
@@ -537,6 +557,23 @@ def account_of(provider, uid, environment, read_file, user_of, read_at, usage_of
                 account.update(state="ok", method=method)
                 return account
         config_dir = environment.get("CLAUDE_CONFIG_DIR")
+        huella = environment.get(ACCOUNT_ENV_TOKEN)
+        if isinstance(huella, str) and re.match(r"[0-9a-f]{16}\Z", huella):
+            # Con un token de setup-token paga la cuenta del token, no la de .claude.json: su correo
+            # sale del mapa «huella → correo» que mantiene Dani, y sin él no se adivina.
+            mapping = os.path.join(home, ".claude", "cuentas-token") if home else None
+            email = None
+            if mapping and read_text is not None:
+                status, text = read_text(mapping)
+                if status == "denied":
+                    account.update(state="no_legible", config=mapping)
+                    return account
+                email = token_account(text, huella) if status == "ok" else None
+            account.update(state="ok", method="setup_token", email=email, config=mapping)
+            if email and usage_of is not None:
+                claude_dir = config_dir or (os.path.join(home, ".claude") if home else None)
+                account["usage"] = usage_of("claude", claude_dir, email, pid, uid, environment) if claude_dir else None
+            return account
         path = os.path.join(config_dir, ".claude.json") if config_dir else (
             os.path.join(home, ".claude.json") if home else None)
         if not path:
@@ -918,7 +955,24 @@ class HostReader:
                     values[name] = text
             elif name in ACCOUNT_ENV_FLAGS and value.strip():
                 values[name] = value.decode("utf-8", "replace") if name.startswith("CLAUDE_CODE_USE_") else True
+            elif name == ACCOUNT_ENV_TOKEN and value.strip():
+                values[name] = token_fingerprint(value)
         return values
+
+    def read_account_text(self, path):
+        """Lee un fichero de texto de cuentas (``cuentas-token``) en este momento, sin seguir más de 64 KB."""
+        try:
+            with open(path, "rb") as handle:
+                raw = handle.read(MAX_TOKEN_MAP + 1)
+            if len(raw) > MAX_TOKEN_MAP:
+                return ("invalid", None)
+            return ("ok", raw.decode("utf-8"))
+        except (FileNotFoundError, NotADirectoryError):
+            return ("absent", None)
+        except PermissionError:
+            return ("denied", None)
+        except (OSError, UnicodeError):
+            return ("invalid", None)
 
     def read_account_file(self, path):
         """Lee un JSON de cuenta en este momento; se recuerda solo durante esta misma sonda."""
@@ -948,6 +1002,13 @@ class HostReader:
         ``CODEX_HOME``); si no se puede, el último ``token_count`` de sus rollouts.
         """
         if provider == "claude":
+            huella = (environment or {}).get(ACCOUNT_ENV_TOKEN)
+            if isinstance(huella, str) and re.match(r"[0-9a-f]{16}\Z", huella):
+                # La barra deja el uso de cada token en su propio fichero, por huella.
+                status, document = self.read_account_file(os.path.join(folder, "uniconnect-uso-%s.json" % huella))
+                usage = claude_usage(document, email) if status == "ok" else None
+                if usage is not None:
+                    return usage
             status, document = self.read_account_file(os.path.join(folder, "uniconnect-uso.json"))
             return claude_usage(document, email) if status == "ok" else None
         if provider != "codex":
@@ -1287,7 +1348,7 @@ def probe(socket_name="default", sessions=(), reader=None, now=None, accounts=Fa
             agent["account"] = account_of(
                 agent["provider"], int(process.get("uid", -1)), reader.account_environment(agent["pid"]),
                 reader.read_account_file, reader.user_of, output["checked_at"], getattr(reader, "usage_of", None),
-                agent["pid"])
+                agent["pid"], read_text=getattr(reader, "read_account_text", None))
             result = dict(result, agent=agent)
         output["sessions"].append({
             "name": name, "session_id": members[0]["session_id"],

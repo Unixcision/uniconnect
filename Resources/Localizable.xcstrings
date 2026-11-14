@@ -47275,6 +47275,17 @@
           }
         }
       }
+    },
+    "uniconnect.accounts.method.setupToken": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Token sin asociar"
+          }
+        }
+      }
     }
   }
 }

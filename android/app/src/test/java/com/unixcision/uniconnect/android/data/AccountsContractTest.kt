@@ -8,6 +8,7 @@ import com.unixcision.uniconnect.android.domain.AccountLabel
 import com.unixcision.uniconnect.android.domain.AccountMethod
 import com.unixcision.uniconnect.android.domain.AccountNotice
 import com.unixcision.uniconnect.android.domain.AccountPalette
+import com.unixcision.uniconnect.android.domain.AccountRow
 import com.unixcision.uniconnect.android.domain.AccountStatus
 import com.unixcision.uniconnect.android.domain.AccountUsageMath
 import com.unixcision.uniconnect.android.domain.LimitName
@@ -226,6 +227,21 @@ class AccountsContractTest {
         val row = AccountsBoard(listOf(MachineAccounts("mac", "Mac", client.decodeAccounts(result)))).rows.first()
         assertEquals(AccountLabel.Method(AccountMethod.API_KEY), row.label)
         assertNull(row.email)
+    }
+
+    @Test fun `una Claude con token sale con el correo del token, o como token sin asociar`() {
+        fun row(email: Any): AccountRow {
+            val result = fixture("accounts-response.json").apply {
+                getJSONArray("windows").getJSONObject(0).getJSONObject("account").put("method", "setup_token").put("email", email)
+            }
+            return AccountsBoard(listOf(MachineAccounts("mac", "Mac", client.decodeAccounts(result)))).rows.first()
+        }
+        val mapped = row("unixcision@gmail.com")
+        assertEquals(AccountLabel.Email("unixcision@gmail.com", AccountPalette.indexOf("unixcision@gmail.com")), mapped.label)
+        assertEquals("unixcision@gmail.com", mapped.email)
+        val unmapped = row(JSONObject.NULL)
+        assertEquals(AccountLabel.Method(AccountMethod.SETUP_TOKEN), unmapped.label)
+        assertNull(unmapped.email)
     }
 
     @Test fun `un email solo cuenta si se leyo en esta llamada`() {

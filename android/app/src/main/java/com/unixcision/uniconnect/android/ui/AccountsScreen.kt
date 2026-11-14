@@ -569,6 +569,7 @@ private fun methodText(method: AccountMethod): String = when (method) {
     AccountMethod.BEDROCK -> stringResource(R.string.accounts_method_bedrock)
     AccountMethod.VERTEX -> stringResource(R.string.accounts_method_vertex)
     AccountMethod.FOUNDRY -> stringResource(R.string.accounts_method_foundry)
+    AccountMethod.SETUP_TOKEN -> stringResource(R.string.accounts_method_setup_token)
 }
 
 /** Una insignia pequeña: la IA de la ventana o el plan de la cuenta. */
