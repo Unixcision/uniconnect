@@ -140,7 +140,11 @@ fun NieveMachine(model: MachineModel, actions: MachineActions, menu: @Composable
                         MachineLine.Title -> MachineTitle(model)
                         MachineLine.Offline -> MachineOfflineCard(model, actions.onConnect, Modifier.padding(start = page, end = page, top = 20.dp))
                         MachineLine.Stale -> MachineStaleBanner(model, actions.onConnect, Modifier.padding(start = page, end = page, top = 16.dp))
-                        MachineLine.Summary -> Summary(model)
+                        MachineLine.Summary -> Summary(model) { kind ->
+                            // The numbers count the whole machine, so they open «Todos» with the matching filter.
+                            selection.select(WorkspaceTabs.ALL)
+                            chosen = kind.filter
+                        }
                         MachineLine.Tabs -> WorkspaceTabRow(model, selection, stuck = { stuck }, onHold = actions.onHoldWorkspace)
                         MachineLine.Filter -> FilterControl(filter) { chosen = it }
                         MachineLine.LocalOnly -> NieveFooter(stringResource(R.string.box_local_only), Modifier.padding(top = 12.dp), color = UniTheme.colors.warning)
@@ -286,10 +290,11 @@ private fun MachineTitle(model: MachineModel) {
 
 /**
  * Windows, AIs working and AIs waiting. Working and waiting are only known while the machine
- * answers; until then the block counts what the last list had, workspaces and windows.
+ * answers; until then the block counts what the last list had, workspaces and windows. A tap on a
+ * number goes to «Todos» filtered to what it counts ([onPick]), when there are workspaces to show.
  */
 @Composable
-private fun Summary(model: MachineModel) {
+private fun Summary(model: MachineModel, onPick: (NieveStatKind) -> Unit) {
     val summary = model.summary
     val stats = if (model.connected) listOf(
         NieveStat(NieveStatKind.WINDOWS, summary.windows, stringResource(R.string.nieve_stat_windows)),
@@ -299,7 +304,9 @@ private fun Summary(model: MachineModel) {
         NieveStat(NieveStatKind.WORKSPACES, model.sections.size, stringResource(R.string.design_workspaces)),
         NieveStat(NieveStatKind.WINDOWS, summary.windows, stringResource(R.string.nieve_stat_windows)),
     )
-    Column(Modifier.fillMaxWidth().padding(top = 16.dp).nieveGroup()) { NieveStatRow(stats) }
+    Column(Modifier.fillMaxWidth().padding(top = 16.dp).nieveGroup()) {
+        NieveStatRow(stats, onPick = if (model.sections.isNotEmpty()) onPick else null)
+    }
 }
 
 /**

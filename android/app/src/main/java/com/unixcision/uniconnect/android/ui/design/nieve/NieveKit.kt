@@ -38,6 +38,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -47,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.unixcision.uniconnect.android.R
 import com.unixcision.uniconnect.android.domain.ActivityState
+import com.unixcision.uniconnect.android.domain.WindowFilter
 import com.unixcision.uniconnect.android.ui.MachineState
 import com.unixcision.uniconnect.android.ui.components.ActivityMark
 import com.unixcision.uniconnect.android.ui.theme.ContinuousRoundedShape
@@ -278,7 +280,17 @@ internal fun NieveStateLine(state: MachineState, address: String, style: TextSty
 }
 
 /** What a number of the summary counts, which decides the glyph beside it. */
-internal enum class NieveStatKind { WORKSPACES, WINDOWS, WORKING, WAITING }
+internal enum class NieveStatKind {
+    WORKSPACES, WINDOWS, WORKING, WAITING;
+
+    /** The filter that lists, under «Todos», exactly the windows this number counts. */
+    val filter: WindowFilter
+        get() = when (this) {
+            WORKING -> WindowFilter.WORKING
+            WAITING -> WindowFilter.WAITING
+            WORKSPACES, WINDOWS -> WindowFilter.ALL
+        }
+}
 
 /** One number of the summary block. */
 @Immutable
@@ -287,15 +299,20 @@ internal data class NieveStat(val kind: NieveStatKind, val value: Int, val label
 /**
  * The numbers that matter, side by side between hairlines, as the first row of a group. Columns
  * share the width evenly and keep one height, so a label that wraps never misaligns the numbers.
+ * With [onPick], a tap on a number goes to the windows it counts.
  */
 @Composable
-internal fun NieveStatRow(stats: List<NieveStat>, modifier: Modifier = Modifier) {
+internal fun NieveStatRow(stats: List<NieveStat>, modifier: Modifier = Modifier, onPick: ((NieveStatKind) -> Unit)? = null) {
     val colors = UniTheme.colors
     val rule = nieveRuleColor()
     Row(modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
         stats.forEachIndexed { index, stat ->
             if (index > 0) Box(Modifier.align(Alignment.CenterVertically).width(0.5.dp).height(44.dp).background(rule))
-            Column(Modifier.weight(1f).fillMaxHeight().padding(start = 14.dp, end = 8.dp, top = 14.dp, bottom = 14.dp)) {
+            Column(
+                Modifier.weight(1f).fillMaxHeight()
+                    .then(if (onPick != null) Modifier.clickable(role = Role.Button) { onPick(stat.kind) } else Modifier)
+                    .padding(start = 14.dp, end = 8.dp, top = 14.dp, bottom = 14.dp),
+            ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(stat.value.toString(), style = NieveText.number, maxLines = 1)
                     NieveStatMark(stat)
